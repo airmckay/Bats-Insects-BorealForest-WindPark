@@ -1,0 +1,774 @@
+
+---
+title: "4. Insect - bat models and figures"
+output: html_document
+date: "2023-05-23"
+---
+
+# Input: Bats and insect data aggregated to night, with and without weather data attached 
+# Output - GAM models predicting bat feeding buzzes in response to insect presence/absence, with and without weather, table for appendix describing each model and a figure expressing bat feeding activity in response to hours after sunset. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Set up work space 
+```{r}
+
+library(tidyverse)
+library(ggplot2)
+library(gratia)
+library(DHARMa)
+library(mgcv)
+library(tidymv)
+library(knitr)
+library(kableExtra)
+library(tidycat)
+library(broom)
+library(ggpubr)
+library(cowplot)
+library(suncalc)
+library(lubridate)
+
+source(file = "~/1. PhD_Main/GitHub_link/HighstatLibV11.R")  
+source(file = "~/1. PhD_Main/GitHub_link/HighstatLibV13.R") 
+
+input <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Input"
+
+dataset1 <- "bats and insects combined no weather.csv"
+dataset2 <- "bats and insects combined with weather.csv"
+dataset3 <- "Marker_night_inventory_0704.2022_edit.csv" 
+
+
+path1 <- str_c(input, "/", dataset1)
+path2 <- str_c(input, "/", dataset2)
+path3 <- str_c(input, "/", dataset3)
+
+batsbugs <- read_csv(path1) # 2041 bat-bug hours with 15 vars
+batsbugsweather <- read.csv(path2) # 2037 bat-bug hours with 17 vars
+active.nights <- read.csv(path3, sep = ";") # # 951 obs of 3 variables
+
+# # for Reed
+output <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Reed/Outputs"
+
+## 
+ file.name <- "4. Insect - bat models and figures"
+# 
+ todays_date <- Sys.Date()
+# 
+dir.name <- str_c(output,"/", file.name, "_", todays_date)
+ dir.name
+# 
+ dir.create(dir.name) # be careful not to run over an already created directory 
+
+output_today <- dir.name
+
+setwd(output_today)
+
+getwd()
+
+```
+
+
+## Prepping dataset without weather 
+```{r}
+#---QUICK INITIAL LOOK AT THE 'batsbugs' DATA OBJECT
+str(batsbugs)
+head(batsbugs)
+tail(batsbugs)
+dim(batsbugs)
+summary(batsbugs) 
+names(batsbugs)
+
+sum(batsbugs$bugcount) # 4563
+sum(batsbugs$batpass) # 373 
+
+tz(batsbugs$nighthour) # UTC
+tz(batsbugs$datehour) # UTC
+
+batsbugs$datehour <- force_tz(batsbugs$datehour, tzone = "Europe/Berlin")
+tz(batsbugs$datehour)
+
+batsbugs$nighthour <- force_tz(batsbugs$nighthour, tzone = "Europe/Berlin")
+tz(batsbugs$nighthour)
+
+####################################################
+
+#remove rows with NAs (if any)
+
+batsbugs2 <- na.omit(batsbugs) 
+dim(batsbugs2)
+# 2041   15 No NAs
+
+#What is the percentage of zero values in bugcount?
+100* sum(batsbugs$bugcount == 0) / nrow(batsbugs) 
+#[1] 86.6242
+
+100* sum(batsbugs$batpass == 0) / nrow(batsbugs) 
+#[1] 94.90446
+
+#add new column that cuts 'bugcount' into three categories
+range(batsbugs2$bugcount)
+batsbugs3 <- batsbugs2 %>% mutate(category=cut(bugcount, breaks=c(-Inf, 0, 9, Inf), labels=c("no","low","swarm")))
+table(batsbugs3$category)
+
+ #   no   low swarm 
+ # 1768   176    97 
+
+plot(table(batsbugs3$category)) #very few observations in both category swarm and category swarm
+
+#add new column that cuts 'bugcount' into binary variable
+InsectBat <- batsbugs3 %>% mutate(binary=cut(bugcount, breaks=c(-Inf, 0, Inf), labels=c("No insects","Insects active")))
+table(InsectBat$binary)
+    # No insects Insects active 
+    #       1768            273 
+
+plot(table(InsectBat$binary)) #probably use this as predictor
+
+#rename
+InsectBat$InsectCount <- InsectBat$bugcount
+
+InsectBat <- InsectBat %>% 
+  mutate(binary=cut(InsectCount, breaks=c(-Inf, 0, Inf), 
+                    labels=c("No insects","Insects active")),
+         binarybat=cut(batpass, breaks=c(-Inf, 0, Inf), 
+                    labels=c("No bats","Bats active"))) 
+
+#make sure other categorical variables are factors
+InsectBat$fSite <- factor(InsectBat$Site)
+InsectBat$fLocality <- factor(InsectBat$Locality)
+InsectBat$fHabitat <- factor(InsectBat$Habitat)
+InsectBat$binary <- factor(InsectBat$binary)
+InsectBat$binarybat <- factor(InsectBat$binarybat)
+
+head(InsectBat)
+tail(InsectBat)
+summary(InsectBat)
+sum(InsectBat$batpass)
+
+#write.csv(InsectBat, "R export bats insects hr no weather.csv") 
+
+par(mfrow = c(1,2), mar = c(5,5,2,2))
+boxplot(batpass ~ category, data = InsectBat) 
+# based on IR definitions of swarms 
+
+boxplot(batpass ~ binary, data = InsectBat) 
+# We do not have enough photos with high insect counts to get much from those distinctions
+
+par(mfrow = c(2,1), mar = c(4,5,1,2), cex.lab = 1.5)
+plot(InsectBat$HOUR.12, InsectBat$batpass, xlab= "HOUR.12", ylab = "Bat pass per hour")
+plot(InsectBat$HOUR.12, InsectBat$InsectCount, xlab= "HOUR.12", ylab = "Insect count per hour")
+
+summary_insectbatnight <- InsectBat %>% group_by(Site, Locality, night) %>% dplyr::summarize(n = sum(n())) # number of observations per night per site 
+
+# number of hours recorded per site 
+summary_insectbathour <- InsectBat %>% group_by(Site, Locality) %>% dplyr::summarize(n = sum(n())) 
+summary_insectbathour
+
+#   Site  Locality      n
+#   <chr> <chr>     <int>
+# 1 N08   Turbine8    442
+# 2 N11   Turbine11   544
+# 3 P08   Turbine8    454
+# 4 P11   Turbine11   601
+
+sum(InsectBat$InsectCount)
+
+bathours <- InsectBat %>% dplyr::filter(batpass>0)
+
+```
+
+
+## Prepping dataset with weather 
+```{r}
+#---QUICK INITIAL LOOK AT THE 'batsbugsweather' DATA OBJECT
+str(batsbugsweather)
+head(batsbugsweather)
+tail(batsbugsweather)
+dim(batsbugsweather)
+summary(batsbugsweather) 
+names(batsbugsweather)
+
+batsbugsweather$nighthour <- as.POSIXct(batsbugsweather$nighthour, format = "%Y-%m-%d %H:%M:%OS")
+batsbugsweather$datehour <- as.POSIXct(batsbugsweather$datehour, format = "%Y-%m-%d %H:%M:%OS")
+
+tz(batsbugsweather$nighthour) # ""
+tz(batsbugsweather$datehour) # "" 
+
+batsbugsweather$datehour <- force_tz(batsbugsweather$datehour, tzone = "Europe/Berlin")
+tz(batsbugsweather$datehour)
+
+batsbugsweather$nighthour <- force_tz(batsbugsweather$nighthour, tzone = "Europe/Berlin")
+tz(batsbugsweather$nighthour)
+
+####################################################
+
+#remove rows with NAs (if any)
+batsbugsweather2 <- na.omit(batsbugsweather) 
+dim(batsbugsweather2)
+# 2037      17 No NAs
+
+#What is the percentage of zero values in bugcount?
+100* sum(batsbugsweather$bugcount == 0) / nrow(batsbugsweather) 
+#[1] 86.69612
+
+100* sum(batsbugsweather$batpass == 0) / nrow(batsbugsweather) 
+#[1] 94.94354
+
+sum(batsbugsweather$bugcount)# 4546
+sum(batsbugsweather$batpass) # 372
+
+#add new column that cuts 'bugcount' into three categories
+range(batsbugsweather2$bugcount) # 0 258
+batsbugsweather3 <- batsbugsweather2 %>% mutate(category=cut(bugcount, breaks=c(-Inf, 0, 9, Inf), labels=c("no","low","swarm")))
+
+table(batsbugsweather3$category)
+plot(table(batsbugsweather3$category)) #very few observations in both category swarm and category swarm
+
+#add new column that cuts 'bugcount' into binary variable
+InsectBatW <- batsbugsweather3 %>% mutate(binary=cut(bugcount, breaks=c(-Inf, 0, Inf), labels=c("No insects","Insects active")))
+table(InsectBatW$binary)
+plot(table(InsectBatW$binary)) #probably use this as predictor
+
+#rename
+InsectBatW$InsectCount <- InsectBatW$bugcount
+
+InsectBatW <- InsectBatW %>% 
+  mutate(binary=cut(InsectCount, breaks=c(-Inf, 0, Inf), 
+                    labels=c("No insects","Insects active")))
+
+#make sure other categorical variables are factors
+InsectBatW$fSite <- factor(InsectBatW$Site)
+InsectBatW$fLocality <- factor(InsectBatW$Locality)
+InsectBatW$fHabitat <- factor(InsectBatW$Habitat)
+InsectBatW$binary <- factor(InsectBatW$binary)
+InsectBatW$night <- as.Date(InsectBatW$night)
+
+head(InsectBatW)
+tail(InsectBatW)
+
+#write.csv(InsectBatW, "R export bats insects hr with weather.csv") 
+
+par(mfrow = c(1,2), mar = c(5,5,2,2))
+boxplot(batpass ~ category, data = InsectBatW) 
+# based on IR definitions of swarms 
+
+boxplot(batpass ~ binary, data = InsectBatW) 
+# We do not have enough photos with high insect counts to get much from those distinctions
+
+par(mfrow = c(2,1), mar = c(4,5,1,2), cex.lab = 1.5)
+plot(InsectBatW$HOUR.12, InsectBatW$batpass, xlab= "HOUR.12", ylab = "Batpass per hour")
+plot(InsectBatW$HOUR.12, InsectBatW$InsectCount, xlab= "HOUR.12", ylab = "InsectCount per hour")
+
+summary_insectbatnight1 <- InsectBatW %>% group_by(Site, Locality, night) %>% dplyr::summarize(n = sum(n())) # number of observations per night per site 
+
+# number of hours recorded per site 
+summary_insectbathour1 <- InsectBatW %>% group_by(Site, Locality) %>% dplyr::summarize(n = sum(n()))
+
+
+summary_insectbathour1
+#   Site  Locality      n
+#   <chr> <chr>     <int>
+# 1 N08   Turbine8    440
+# 2 N11   Turbine11   544
+# 3 P08   Turbine8    452
+# 4 P11   Turbine11   601
+
+summary_insectbathour # compared to hours not aggregated to weather
+#  Site  Locality      n
+#   <chr> <chr>     <int>
+# 1 N08   Turbine8    442
+# 2 N11   Turbine11   544
+# 3 P08   Turbine8    454
+# 4 P11   Turbine11   601
+
+summary(InsectBat$night)
+#         Min.      1st Qu.       Median         Mean      3rd Qu.         Max. 
+# "2020-07-16" "2020-08-13" "2020-08-30" "2020-08-27" "2020-09-14" "2020-09-28"
+
+summary(InsectBatW$night)
+#         Min.      1st Qu.       Median         Mean      3rd Qu.         Max. 
+# "2020-07-16" "2020-08-13" "2020-08-30" "2020-08-27" "2020-09-14" "2020-09-28" 
+
+summary(summary_insectbathour$n)
+  #  Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  # 442.0   451.0   500.0   511.2   560.2   603.0 
+
+```
+
+## Create the hour after sunset column 
+```{r}
+head(InsectBatW)
+head(InsectBat)
+head(active.nights)
+
+# manually add 09.30 
+thenights <- as.data.frame(active.nights$night %>% unique())
+colnames(thenights)[1] = "date"
+thenights$date <- as.Date(thenights$date, format = "%d.%m.%Y")
+day0930 <- as.data.frame(as.Date("2020-09-30")) 
+colnames(day0930 )[1] = "date"
+thenights1 <- full_join(thenights, day0930)
+# Will have to use night as a proxy for date
+# The code below works best if the data variable is named "date" 
+
+
+#Use location of T-08
+photoperiod <- getSunlightTimes(
+  date = thenights1$date, 
+  keep = c("sunrise", "sunset"),
+  lat = 59.49964,
+  lon = 11.73199, 
+  tz = "Europe/Berlin")
+
+photoperiod1 <- photoperiod %>%
+  mutate(
+    date = as.POSIXct(date),
+    day_length = as.numeric(sunset - sunrise)) %>% distinct()
+
+photoperiod2 <- photoperiod1 %>% mutate(night = as.Date(date)) %>% select(-date) %>% distinct()
+summary(photoperiod2)
+
+head(photoperiod2)
+
+head(InsectBat)
+
+
+tz(InsectBat$datehour) # "Europe/Berlin" 
+tz(InsectBatW$datehour) # "Europe/Berlin" 
+tz(photoperiod$sunset) # "Europe/Berlin" 
+
+#Combine photoperiod data with InsectBat data
+InsectBat1 <- left_join(InsectBat, photoperiod2)
+head(InsectBat1)
+
+tz(InsectBat1$nighthour) # "Europe/Berlin"
+tz(InsectBat1$sunset) # "Europe/Berlin" 
+
+
+# Find difference between datehour and sunset 
+InsectBat1$difhour <- difftime(InsectBat1$datehour, InsectBat1$sunset, tz == 'Europe/Berlin', unit="hours")
+
+test <- InsectBat1 %>% select(datehour, sunset, difhour)
+# Looks good! 
+
+# Hour difference to sunset - variable for modelling 
+InsectBat1$HOUR.SS <-  time_length(InsectBat1$difhour,unit="hours")
+
+```
+
+
+## More data exploration 
+```{r}
+#Make a new column in the dataset
+InsectBat1$batpass30  <- InsectBat1$batpass
+#Make a new column in the dataset
+InsectBat1$InsectCount30 <-InsectBat1$InsectCount
+
+InsectBat1$InsectCount5 <-InsectBat1$InsectCount
+
+# reassign batpass_sum values over 10 to 10
+InsectBat1$batpass30[InsectBat1$batpass>30] <- 30
+# reassign InsectCount values over 30 to 30
+InsectBat1$InsectCount30[InsectBat1$InsectCount>30] <- 30
+
+# reassign InsectCount values over 10 to 10
+InsectBat1$InsectCount5[InsectBat1$InsectCount>5] <- 5
+
+summary(InsectBat1$InsectCount30)
+
+par(mfrow = c(2,1), mar = c(4,5,1,2), cex.lab = 1.5)
+plot(InsectBat1$HOUR.12, InsectBat1$batpass30, xlab= "HOUR.12", ylab = "batpass.max.10")
+plot(InsectBat1$HOUR.12, InsectBat1$InsectCount30, xlab= "HOUR.12", ylab = "insectcount.max.50")
+
+
+#What is the percentage of values > 10 in batpass?
+100* sum(InsectBat1$bugcount > 10) / nrow(InsectBat1) 
+#[1] 4.507594
+
+
+#What is the percentage of values > 30 in batpass?
+100* sum(InsectBat1$InsectCount > 30) / nrow(InsectBat1) 
+#[1] 1.714846
+
+#Sketching relationships 
+
+
+## Relationship between feeding buzzes and insect counts
+InsectBat1$logSumIns  <- log1p(InsectBat1$InsectCount) #log x+1 transform insect variable
+
+par(mfrow = c(2,1), mar = c(4,5,1,2), cex.lab = 1.5)
+plot(InsectBat1$logSumIns,InsectBat1$batpass)
+plot(InsectBat1$InsectCount,InsectBat1$batpass)
+#Hmmm - if anything - it seems like there is a negative relationship - use the binary variable as predictor instead!
+
+
+```
+
+
+## fit GAM - HOUR.SS (hours difference to sunset) response 
+```{r}
+summary(InsectBat1)
+M1 <- gam(batpass ~ binary + s(HOUR.SS, bs = "gp", k = 15) + s(fLocality, bs="re"),              
+          data = InsectBat1, method = "REML",    #REML is not default, but is highly recommended by experts
+          family = nb(), select=TRUE)             
+summary(M1)
+
+# Family: Negative Binomial(0.059) 
+# Link function: log 
+# 
+# Formula:
+# batpass ~ binary + s(HOUR.SS, bs = "gp", k = 15) + s(fLocality, 
+#     bs = "re")
+# 
+# Parametric coefficients:
+#                      Estimate Std. Error z value Pr(>|z|)    
+# (Intercept)           -4.4976     0.7460  -6.029 1.65e-09 ***
+# binaryInsects active   1.6080     0.3931   4.090 4.31e-05 ***
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# Approximate significance of smooth terms:
+#                 edf Ref.df Chi.sq p-value    
+# s(HOUR.SS)   7.8206     14 65.495 < 2e-16 ***
+# s(fLocality) 0.9016      1  8.674 0.00192 ** 
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# R-sq.(adj) =  0.0202   Deviance explained = 40.7%
+# -REML = 547.57  Scale est. = 1         n = 2041
+
+
+par(mfrow = c(2,2))
+gam.check(M1, rep=500) #k-index a bit too low, but we'll accept this
+gam.check(M1)
+
+overdispersion.M1 <- sum( residuals(M1, "pearson")^2 ) / M1$df.residual
+overdispersion.M1
+#[1] 0.9576367
+
+dotchart(InsectBat$InsectCount)
+hist(InsectBat$InsectCount)
+summary(InsectBat$InsectCount)
+sd(InsectBat$InsectCount)
+
+pdata <- with(InsectBat1,
+              expand.grid(binary = levels(binary), 
+                          InsectCount = seq(min(InsectCount), max(InsectCount), length=100),
+                          fLocality = c("Turbine11"),
+                          HOUR.SS = seq(min(HOUR.SS), max(HOUR.SS), length=100))) 
+#Note - it does not matter whether you choose T11 or T08 - the plots look the same
+head(pdata)
+tail(pdata)
+
+fit <- data.frame(predict(M1, newdata=pdata, se.fit=TRUE, type = 'response'))
+fit <- transform(fit, upper = fit + (1*se.fit), lower = fit-(1*se.fit)) #1*se.fit instead of two because huge variation
+pred <- cbind(pdata,fit)
+
+head(pred)
+summary(pred)
+
+
+```
+
+
+## # "Bats - Insects" model 
+fit GAM - HOUR.SS (since sunset) response 
+```{r}
+summary(InsectBat1)
+M1 <- gam(batpass ~ binary + s(HOUR.SS, bs = "gp", k = 15) + s(fLocality, bs="re"),              
+          data = InsectBat2, method = "REML",    #REML is not default, but is highly recommended by experts
+          family = nb(), select=TRUE)             
+summary(M1)
+
+# Family: Negative Binomial(0.063) 
+# Link function: log 
+# 
+# Formula:
+# batpass ~ binary + s(HOUR.SS, bs = "gp", k = 15) + s(fLocality, 
+#     bs = "re")
+# 
+# Parametric coefficients:
+#                      Estimate Std. Error z value Pr(>|z|)    
+# (Intercept)           -4.6427     0.8040  -5.774 7.72e-09 ***
+# binaryInsects active   1.5868     0.3822   4.152 3.30e-05 ***
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# Approximate significance of smooth terms:
+#                 edf Ref.df Chi.sq p-value    
+# s(HOUR.SS)   8.7132     14 80.267 < 2e-16 ***
+# s(fLocality) 0.9061      1  9.099 0.00153 ** 
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# R-sq.(adj) =  0.0141   Deviance explained = 43.9%
+# -REML = 544.27  Scale est. = 1         n = 2045
+
+par(mfrow = c(2,2))
+gam.check(M1, rep=500) #k-index a bit too low, but we'll accept this
+gam.check(M1)
+
+overdispersion.M1 <- sum( residuals(M1, "pearson")^2 ) / M1$df.residual
+overdispersion.M1
+#[1] 0.9378456
+
+
+#M1 <- gam(batpass ~ binary + s(HOUR.12, by = fLocality, bs = "gp", k = 15) ,              
+#          data = InsectBat, method = "REML",                  #REML is not default, but is highly recommended by experts
+#          family = nb(), select=TRUE)             
+#summary(M1)
+
+#par(mfrow = c(2,2))
+#gam.check(M1, rep=500) 
+
+#overdispersion.M1 <- sum( residuals(M1, "pearson")^2 ) / M1$df.residual
+#overdispersion.M1
+#[1] 0.7205232
+
+#M1 also look OK, but underdispersed
+#Use M1, also because that is how we dealt with fLocility in the other GAMs (per night)
+
+##Sketching the results - M1
+dotchart(InsectBat2$InsectCount)
+hist(InsectBat2$InsectCount)
+summary(InsectBat2$InsectCount)
+sd(InsectBat2$InsectCount)
+
+pdata <- with(InsectBat2,
+              expand.grid(binary = levels(binary), 
+                          InsectCount = seq(min(InsectCount), max(InsectCount), length=100),
+                          fLocality = c("Turbine11"),
+                          HOUR.SS = seq(min(HOUR.SS), max(HOUR.SS), length=100))) 
+#Note - it does not matter whether you choose T11 or T08 - the plots look the same
+head(pdata)
+tail(pdata)
+
+fit <- data.frame(predict(M1, newdata=pdata, se.fit=TRUE, type = 'response'))
+fit <- transform(fit, upper = fit + (1*se.fit), lower = fit-(1*se.fit)) #1*se.fit instead of two because huge variation
+pred <- cbind(pdata,fit)
+
+head(pred)
+summary(pred)
+
+```
+
+
+# Exploratory figures 
+```{r}
+
+## Survey effort
+InsectBat1$active.hour <- "TRUE"
+
+library(MetBrewer)
+names(InsectBat1)
+levels(InsectBat1$binary)
+levels(InsectBat1$binarybat)
+# Appendix 
+
+summary(InsectBat1$night)
+
+bugsonly <- InsectBat1 %>% filter(binary == "Insects active") %>% droplevels()
+# 273 trap hours
+summary(bugsonly$night)
+#         Min.      1st Qu.       Median         Mean      3rd Qu.         Max. 
+# "2020-07-16" "2020-08-08" "2020-08-16" "2020-08-18" "2020-08-27" "2020-09-28" 
+batsonly <- InsectBat1 %>% filter(binarybat == "Bats active") %>% droplevels()
+# 104 trap hours 
+summary(batsonly$night)
+#         Min.      1st Qu.       Median         Mean      3rd Qu.         Max. 
+# "2020-07-18" "2020-08-03" "2020-08-12" "2020-08-12" "2020-08-18" "2020-09-18" 
+
+ggplot() + 
+  geom_point(data = bugsonly, aes(x = night, y = binary), 
+             color = "#E67423",  size = 4, alpha = 0.5)  +
+  geom_point(data = batsonly, aes(x = night, y = binarybat), 
+             color = "#999999", alpha = 0.5, size = 4) +
+  geom_point(data = InsectBat1, aes(x = night, y = active.hour), 
+             alpha = 0.5, size = 4, color = "#23293F") + 
+  facet_wrap(~Site) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), 
+text = element_text(size = 20),
+axis.line = element_line(colour = "black"), 
+legend.position="none") + 
+  xlab("") + ylab("") + 
+  scale_x_date(limits = c(min = as.Date("2020-07-01"), 
+                          max = as.Date("2020-10-01"), limits = c(0,0))) + 
+    scale_y_discrete(labels = c("Bats active", 
+    "Insects active", "Camera - detector active"))
+  
+```
+
+
+### Figures for the paper 
+```{r}
+
+reference = c("#B40F20" , "#FCC200", "#46ACC8", "#999999") 
+
+
+bugsonly11 <- bugsonly %>% filter(Locality == "Turbine11") # 143 obs 
+
+plt2 <- 
+  ggplot(pred, aes(x=HOUR.SS, y = fit, group = factor(binary))) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'lightgrey', alpha = 0.5) +
+  geom_line(aes(color = binary), linewidth = 2) + 
+  scale_color_manual(
+    values = c("No insects" = "black" , "Insects active" = "#E67423")) +
+  labs(x = "Time", y ="Predicted bat feeding passes (lines) / Insect counts (dots)") +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        text = element_text(size = 20),
+        legend.position="bottom", 
+        axis.line = element_line(colour = "black")) +
+  theme(text = element_text(size = 15)) +
+  geom_count(data = bugsonly11, 
+             aes(x = HOUR.SS, y = InsectCount5), color = "#E67423", alpha = 0.5) +
+  scale_size_continuous(name=" ") + 
+ labs(color  = " ") 
+plt2
+
+# Figure 
+plt2 <- 
+  ggplot(pred, aes(x=HOUR.SS, y = fit, group = factor(binary))) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'lightgrey', alpha = 0.5) +
+  geom_line(aes(color = binary), linewidth = 2) + 
+  scale_color_manual(
+    values = c("No insects" = "black" , "Insects active" = "#E67423")) +
+  labs(x = "Hours since sunset", y ="Bat feeding passes per hour") +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        text = element_text(size = 20),
+        legend.position="bottom", 
+        axis.line = element_line(colour = "black")) +
+  theme(text = element_text(size = 15)) +
+  scale_size_continuous(name=" ") + 
+ labs(color  = " ") 
+plt2
+
+```
+
+
+# "Insects" Model
+## Evaluate influence of weather on insect data ("Insects" model)
+
+```{r}
+head(InsectBatW) 
+
+M2 <- gam(InsectCount ~ s(jnight, bs = "gp", k = 60) + s(wind) + s(temp) + s(fLocality, bs="re"),              
+          data = InsectBatW, method = "REML",    #REML is not default, but is highly recommended by experts
+          family = nb(), select=TRUE)             
+summary(M2)
+
+# Family: Negative Binomial(0.048) 
+# Link function: log 
+# 
+# Formula:
+# InsectCount ~ s(jnight, bs = "gp", k = 60) + s(wind) + 
+#     s(temp) + s(fLocality, bs = "re")
+# 
+# Parametric coefficients:
+#             Estimate Std. Error z value Pr(>|z|)
+# (Intercept)  -0.3718     0.6676  -0.557    0.578
+# 
+# Approximate significance of smooth terms:
+#                  edf Ref.df Chi.sq  p-value    
+# s(jnight)    10.8231     59 89.026   0.0102 *  
+# s(wind)       1.7224      9  4.908   0.0371 *  
+# s(temp)       5.2479      9 62.505  < 2e-16 ***
+# s(fLocality)  0.9555      1 21.072 1.06e-06 ***
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# R-sq.(adj) =  0.038   Deviance explained = 24.9%
+# -REML = 1682.6  Scale est. = 1         n = 2037
+
+gam.check(M2)
+par(mfrow = c(2,2))
+gam.check(M2, rep=500) #k-index a bit too low, but we'll accept this
+gam.check(M2)
+
+overdispersion.M2 <- sum( residuals(M2, "pearson")^2 ) / M2$df.residual
+overdispersion.M2
+#[1] 1.02571
+
+```
+
+
+
+# M1 and M2 results tables
+```{r}
+
+## "Bats - Insects" model 
+options(knitr.table.format = "html") 
+ # c("Locality", "Habitat: Natural x Julian night", " Habitat: Turbine pad x Julian night", "Average nightly wind speed")
+
+
+### M1 - Insect2
+# Table of the parametric effects
+ 
+mpara <- tidy(M1, parametric = TRUE, conf.int = TRUE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(mpara) <- c("Parametric terms", "Estimate", "SE", "z-value", "P", "CI (LL)", "CI (UL)")
+
+mpara$"Parametric terms" <- gsub("binaryinsects active",
+                                 "Insects active (binary)",
+                                 mpara$"Parametric terms")
+
+summary(M1)
+mparatab <- kable(mpara)  %>%
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+mparatab
+
+
+# Table of the smooth effects
+msmooth <- tidy(M1, parametric = FALSE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(msmooth) <- c("Smooth terms", "Estimate", "edf", "Chi.sq", "P") 
+msmooth$`Smooth terms` <- as.factor(msmooth$`Smooth terms`)
+levels(msmooth$`Smooth terms`) <- (c("Hour","Locality" ))
+
+summary(M1)
+msmoothtab <- kable(msmooth) %>% 
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+msmoothtab
+
+### M2 
+# Table of the parametric effects
+ 
+mpara <- tidy(M2, parametric = TRUE, conf.int = TRUE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(mpara) <- c("Parametric terms", "Estimate", "SE", "z-value", "P", "CI (LL)", "CI (UL)") 
+
+mparatab <- kable(mpara)  %>%
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+mparatab
+
+
+# Table of the smooth effects
+msmooth <- tidy(M2, parametric = FALSE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(msmooth) <- c("Smooth terms", "Estimate", "edf", "Chi.sq", "P") 
+msmooth$`Smooth terms` <- as.factor(msmooth$`Smooth terms`)
+levels(msmooth$`Smooth terms`) <- (c(
+  "Julian night",
+  "Wind speed", "Temperature", "Locality" ))
+
+
+msmoothtab <- kable(msmooth) %>% 
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+msmoothtab
+
+```
+

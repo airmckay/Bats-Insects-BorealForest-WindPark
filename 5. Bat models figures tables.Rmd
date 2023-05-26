@@ -1,0 +1,1665 @@
+
+---
+title: "Bat models figures tables"
+output: html_document
+date: "2022-05-26"
+---
+# Inputs: 
+Unaggregated bat acoustic data 
+Bat data aggregated to night with weather 
+- Total bat activity and subsetted by build and behavior 
+
+# Outputs: 
+Models and predictions for models from table S4 
+
+Figures: 
+2, 3, 4, 5, S1, S2
+
+Table 1, S3, S4
+
+## Set up work space 
+```{r, echo = FALSE, results = 'hide', fig.show='hide', message=FALSE, warning=FALSE}
+
+library(knitr)
+library(data.table)
+library(tidyverse)
+library(beepr)
+library(lubridate)
+library(purrr)
+library(renv)
+library(stringr)
+library(janitor)
+library(anytime)
+library(kableExtra)
+library(papeR)
+library(skimr)
+library(vtable)
+library(gratia)
+library(DHARMa)
+library(mgcv)
+library(tidymv)
+library(tidyr)
+library(AICcmodavg)
+library(broom)
+library(corrr)
+library(dplyr)
+library(tidycat)
+library(epitools)
+library(cowplot)
+library(colorblindcheck)
+library(MetBrewer)
+library(png)
+library(jpeg)
+library(grid)
+library(ggpubr)
+library(ggstatsplot)
+library(gginnards)
+library(unikn)
+library(ggpmisc)
+
+
+input <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Input/forModels"
+
+input1 <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Input"
+
+
+dataset1 <- "Marker_manualIDscleanred_preparsed.csv"
+
+dataset2 <- "MarkerManual_cleaned_manualid_guild_sitenames.csv"
+
+dataset3 <- "guild_behavior_summarytable_site.csv" 
+# df2C for the dataset aggregated by guild and behavior from Marker aggregated to night_all bats
+dataset4 <- "totalbatpass_summarytable_withbinary_batpass_night_aggregated_site data.csv"
+# df2C for the dataset aggregated to all bats from Marker aggregated to night_all bats
+dataset5 <- "nightlyaggregated_zeros_binary_behavior and guild.csv"
+# dataset aggregated to guild and behavior before being table transformed 
+dataset6 <- "nightlyaggregatedMarker2020_totalbats_zeroinserted_weather_binary.csv"
+# dataset aggregated to night by total bats before table transformed 
+dataset7 <- "guild_behavior_batpass_summarytable_trimmed MRE social and met tower.csv"
+
+
+path1 <- str_c(input1, "/", dataset1)
+path2 <- str_c(input1, "/", dataset2)
+path3 <- str_c(input, "/", dataset3)
+path4 <- str_c(input, "/", dataset4)
+path5 <- str_c(input, "/", dataset5)
+path6 <- str_c(input, "/", dataset6)
+path7 <- str_c(input, "/", dataset7)
+
+
+bats <- read.csv(path1) # All bat passes before parsing or aggregating - 19297 obs of 16 vars 
+bats1 <- read.csv(path2) # All bat passes post parsing and with behavior, guild, etc. - 19438 obs of 20 vars
+bats_gb <- read.csv(path3) # 11412 obs of 20 variables 
+bats_tot <- read.csv(path4) # # 951 obs of 18 variables variables
+bats_gb_simple <- read.csv(path5) # 11412 obs of 17 vars 
+bats_tot_simple <- read.csv(path6) # 951 obs of 15 variables
+bats_gb_trim <- read.csv(path7) # 4866 obs of 20 variables 
+
+# for Reed
+output <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Reed/Outputs"
+
+## 
+ file.name <- "Manuscript_Methods_Results"
+# 
+ todays_date <- Sys.Date()
+# 
+dir.name <- str_c(output,"/", file.name, "_", todays_date)
+ dir.name
+# 
+ dir.create(dir.name) # be careful not to recreate existing directories 
+
+output_today <- dir.name
+output_today
+
+setwd(output_today)
+getwd()
+
+```
+
+## Formatting datasets 
+```{r, echo = FALSE}
+
+### unnaggregated dataset ###
+str(bats1) 
+names(bats1)
+# remove the index column 
+bats1 <- bats1 %>% select(-X)
+
+#Housekeeping to make character variables factors
+bats1$guild <- factor(bats1$guild)
+bats1$AUTO.ID. <- factor(bats1$AUTO.ID.)
+bats1$manual.id <- factor(bats1$manual.id)
+bats1$behavior <- factor(bats1$behavior)
+bats1$Habitat <- factor(bats1$Habitat)
+bats1$Locality <- factor(bats1$Locality)
+bats1$Site <- factor(bats1$Site)
+bats1$Facility <- factor(bats1$Facility) 
+bats1$night <- as.Date(bats1$DATE.12)
+bats1$jnight <- yday(bats1$DATE.12)
+
+levels(bats1$AUTO.ID.)
+# "BARBAR" "EPTNIL" "MYOBRA" "MYODAU" "MYOMYS" "MYONAT" 
+# "NYCNOC" "NoID"   "PIPNAT" "PIPPIP" "PIPPYG" "PLEAUR" "VESMUR"
+
+levels(bats1$manual.id) 
+# "BABA" "EPNI" "LR1"  "LR2"  "MR1"  "NYNO" "NoID" "PAUR" "PINA" "PIPY" "SR1"  "VEMU"
+summary(bats1$guild)
+#   LRE   MRE  NoID   SRE 
+# 14718    95   484  4141 
+
+bats1$manual.id <- factor(bats1$manual.id, levels = c("EPNI", "VEMU", "NYNO", "LR1", "LR2", 
+                                                    "PIPY", "PINA",  "MR1", 
+                                                    "BABA", "SR1", "PAUR", 
+                                                    "NoID"))
+
+bats1 <- bats1 %>% mutate(auto = case_when(
+  AUTO.ID. == "BARBAR" ~ "BABA",
+  AUTO.ID. == "EPTNIL" ~ "EPNI",
+  AUTO.ID. %in% c("MYODAU", "MYOMYS", "MYONAT", "MYOBRA") ~ "SR1",
+  AUTO.ID. == "NYCNOC" ~ "NYNO",
+  AUTO.ID. == "PIPNAT" ~ "PINA", 
+  AUTO.ID. == "PIPPIP" ~ "MR1", 
+  AUTO.ID. == "PIPPYG" ~ "PIPY", 
+  AUTO.ID. == "PLEAUR" ~ "PAUR", 
+  AUTO.ID. == "VESMUR" ~ "VEMU", 
+  AUTO.ID. == "NoID" ~ "NoID"
+)) %>% mutate(auto = factor(auto)) 
+
+summary(bats1$AUTO.ID.)
+# BARBAR EPTNIL MYOBRA MYODAU MYOMYS MYONAT NYCNOC   NoID PIPNAT PIPPIP PIPPYG PLEAUR VESMUR 
+#     85  14224     50   2451    229      7    296   1205      5     18     70    541    257 
+
+bats1$auto <- factor(bats1$auto, levels = c("EPNI", "VEMU", "NYNO", "LR1", "LR2", 
+                                                    "PIPY", "PINA",  "MR1", 
+                                                    "BABA", "SR1", "PAUR", 
+                                                    "NoID"))
+summary(bats1$auto)
+#  EPNI  VEMU  NYNO   LR1   LR2  PIPY  PINA   MR1  BABA   SR1  PAUR  NoID 
+# 14224   257   296     0     0    70     5    18    85  2737   541  1205 
+
+summary(bats1$manual.id)
+#  EPNI  VEMU  NYNO   LR1   LR2  PIPY  PINA   MR1  BABA   SR1  PAUR  NoID 
+# 14015   168   182   132   221    64     9    22    10  3578  553   484 
+
+## Make the auto guild column 
+
+bats1 <- bats1 %>% mutate(auto_guild = case_when(
+  auto %in% c("EPNI", "NYNO", "VEMU", "LR1", "LR2") ~ "LRE",
+  auto %in% c("PIPY", "PINA", "MR1") ~ "MRE",
+  auto %in% c("BABA", "SR1", "PAUR") ~ "SRE",
+  auto == "NoID" ~ "NoID"
+)) %>% mutate(auto_guild = factor(auto_guild)) 
+
+bats1$guild <- factor(bats1$guild, levels =  c("LRE",  "MRE",  "SRE", "NoID"))
+bats1$auto_guild <- factor(bats1$auto_guild, levels =  c("LRE",  "MRE",  "SRE", "NoID"))
+
+summary(bats1$guild)
+#   LRE   MRE   SRE  NoID 
+# 14718    95  4141   484 
+
+summary(bats1$auto_guild)
+#   LRE   MRE   SRE  NoID 
+# 14777    93  3363  1205 
+
+bats1$Site <- factor(bats1$Site, levels = c("P02", "N02", "P04",  "N04", 
+                                          "P08", "N08", "P09", "N09", 
+                                          "P10", "N10", "P11",  "N11", 
+                                          "P14",  "N14", "Met45", "Met95" )) 
+levels(bats1$Site)
+summary(bats1)
+
+# ------------------------------------------------------------------------------
+
+#Housekeeping to make character variables factors
+bats_gb_simple$guild <- factor(bats_gb_simple$guild)
+bats_gb_simple$behavior <- factor(bats_gb_simple$behavior)
+bats_gb_simple$Habitat <- factor(bats_gb_simple$Habitat)
+bats_gb_simple$Locality <- factor(bats_gb_simple$Locality)
+bats_gb_simple$Site <- factor(bats_gb_simple$Site)
+bats_gb_simple$Facility <- factor(bats_gb_simple$Facility) 
+bats_gb_simple$night <- as.Date(bats_gb_simple$night)
+bats_gb_simple$jnight <- yday(bats_gb_simple$night)
+
+bats_gb_simple$guild <- factor(bats_gb_simple$guild, levels =  c("LRE",  "MRE",  "SRE", "NoID")) 
+
+bats_gb_simple$Site <- factor(bats_gb_simple$Site, levels = c("P02", "N02", "P04",  "N04", 
+                                          "P08", "N08", "P09", "N09", 
+                                          "P10", "N10", "P11",  "N11", 
+                                          "P14",  "N14", "Met45", "Met95" )) 
+levels(bats_gb_simple$Site)
+summary(bats_gb_simple) # Index column can be removed 
+summary(bats_gb_simple$guild) # NoID can be removed 
+
+df_gb <- bats_gb_simple %>% select(-X) %>% filter(guild != "NoID") %>% droplevels()
+summary(df_gb) 
+dim(df_gb) # 8559   16
+
+# ------------------------------------------------------------------------------
+
+### Total bat activity night aggregated ###
+str(bats_tot) 
+names(bats_tot)
+
+#Housekeeping to make character variables factors
+bats_tot$Habitat <- factor(bats_tot$Habitat)
+bats_tot$Locality <- factor(bats_tot$Locality)
+bats_tot$Site <- factor(bats_tot$Site)
+bats_tot$Facility <- factor(bats_tot$Facility) 
+bats_tot$jnight <- yday(bats_tot$night)
+bats_tot$night <- as.Date(bats_tot$night)
+
+# reassign batpass values over 150 to 150
+bats_tot$batpass150 <- bats_tot$Batpass_sum
+bats_tot$batpass150[bats_tot$Batpass_sum>150] <- 150
+## Do NOT use this for modelling 
+
+# reassign batpass values over 50 to 50
+bats_tot$batpass50 <- bats_tot$Batpass_sum
+bats_tot$batpass50[bats_tot$Batpass_sum>50] <- 50
+## Do NOT use this for modelling 
+
+bats_tot$yes_batpass <- bats_tot$batpass01_sum   
+# batpass01_sum is sum of '1' values in batpass01, i.e. 
+# number of observations (total bat passes) per night when batpass recorded
+
+bats_tot$no_batpass <- bats_tot$batpass01_length - bats_tot$batpass01_sum 
+#batpass01_length is number of observ. bat passes per night 
+
+summary(bats_tot)
+
+# ------------------------------------------------------------------------------
+
+### nightly aggregated with guilds, MRE + social + met tower passes removed ###
+summary(bats_gb_trim)
+bats_gb_trim$Habitat <- factor(bats_gb_trim$Habitat)
+bats_gb_trim$Locality <- factor(bats_gb_trim$Locality)
+bats_gb_trim$Site <- factor(bats_gb_trim$Site)
+bats_gb_trim$Facility <- factor(bats_gb_trim$Facility)
+bats_gb_trim$guild <- factor(bats_gb_trim$guild)
+bats_gb_trim$behavior <- factor(bats_gb_trim$behavior)
+bats_gb_trim$jnight <- yday(bats_gb_trim$night)
+
+# Add a survey effort column for number of nights each detector site was active 
+survey.effort <- bats_gb_trim %>% 
+  dplyr::select(Site, night) %>% distinct() 
+
+survey.nights <- count(survey.effort, Site)
+
+bats_gb_trim1 <- left_join(bats_gb_trim, survey.nights) %>% rename(survey.nights = n)
+summary(bats_gb_trim1) # 4866 obs of 22 vars 
+
+# ------------------------------------------------------------------------------
+### Subset by behavior and guild ### 
+
+LREf <- bats_gb_trim1 %>% filter(guild == "LRE", behavior == "Feeding") %>% droplevels()
+LREc <- bats_gb_trim1 %>% filter(guild %in% "LRE", behavior %in% "Commuting") %>% droplevels()
+
+SREf <- bats_gb_trim1 %>% filter(guild == "SRE", behavior == "Feeding") %>% droplevels()
+SREc <- bats_gb_trim1 %>% filter(guild == "SRE", behavior == "Commuting") %>% droplevels()
+
+summary(LREf) # 811 obs of 22 vars 
+summary(LREc) # 811 obs of 22 vars 
+
+summary(SREf) # 811 obs of 22 vars 
+summary(SREc) # 811 obs of 22 vars 
+
+
+## Number of bat passes in each dataset 
+ sum(SREf$Batpass_sum)
+#[1] 328
+ sum(SREc$Batpass_sum)
+#[1] 3787 
+ sum(LREf$Batpass_sum)
+#[1] 3703
+ sum(LREc$Batpass_sum)
+#[1] 10584
+
+ 
+ sum(df$Batpass_sum) # ground level detectors only 
+ #19206
+# ------------------------------------------------------------------------------
+
+### ground and met data - night aggregated bats total ###
+
+ground <- bats_tot %>% filter(Habitat != "MeteorologicalTower") %>% droplevels()
+dim(ground)
+# 811  23
+
+met <- bats_tot %>% filter(Habitat == "MeteorologicalTower") %>% droplevels()
+dim(met)
+# 140  23
+
+### ground and met data - raw ###
+
+ground1 <- bats1 %>% filter(Habitat != "MeteorologicalTower") %>% droplevels()
+dim(ground)
+# 811  23
+
+met1 <- bats1 %>% filter(Habitat == "MeteorologicalTower") %>% droplevels()
+dim(met)
+# 140  23
+ 
+```
+
+
+## Table 1 results - Summary of bat datasets 
+```{r unaggregated_summaries, echo = FALSE}
+
+# Bats total - sum bat passes per site per night (ground level only) 
+df <- bats_tot %>% filter(Habitat != "MeteorologicalTower") %>% droplevels()
+summary(df)
+dim(df) # 811  23
+sum(df$Batpass_sum) # 19206
+nrow(df[df$Batpass_sum == 0,])/nrow(df) # proportion zeroes 
+# 0.1294698 - 13% 
+
+df_est <- bats1 %>% filter(Habitat != "MeteorologicalTower")
+# Aggregated total bat dataset was created from bats1 object, but lost information about behavior in the process 
+df_est %>%  
+ group_by(behavior) %>% 
+   dplyr::summarise(n = sum(n())) 
+#   behavior      n
+#   <fct>     <int>
+# 1 Commuting 14625
+# 2 Feeding    4034
+# 3 Social      547
+ 
+# SRE feeding 
+sum(SREf$Batpass_sum) # 328
+
+nrow(SREf[SREf$Batpass_sum == 0,])/nrow(SREf) # proportion zeroes 
+# 0.8495684
+
+SREf %>%  
+ group_by(behavior) %>% 
+   dplyr::summarise(n = sum(Batpass_sum)) # 328
+
+# SRE commuting  
+sum(SREc$Batpass_sum) # 3787
+
+nrow(SREc[SREc$Batpass_sum == 0,])/nrow(SREc) # proportion zeroes 
+# 0.3094945
+
+SREc %>%  
+ group_by(behavior) %>% 
+   dplyr::summarise(n = sum(Batpass_sum)) # 328
+
+
+
+# LRE feeding 
+sum(LREf$Batpass_sum) # 3703
+
+nrow(LREf[LREf$Batpass_sum == 0,])/nrow(LREf) # proportion zeroes 
+# 0.6177559
+
+LREf %>%  
+ group_by(behavior) %>% 
+   dplyr::summarise(n = sum(Batpass_sum)) # 3703
+
+# LRE commuting  
+sum(LREc$Batpass_sum) # 10584
+
+nrow(LREc[LREc$Batpass_sum == 0,])/nrow(LREc) # proportion zeroes 
+# 0.2355117
+
+LREc %>%  
+ group_by(behavior) %>% 
+   dplyr::summarise(n = sum(Batpass_sum)) # 10584
+
+                    
+```
+
+## Color palettes
+```{r}
+
+guildcol <- c("#B40F20" , "#FCC200", "#46ACC8", "#999999") 
+palette_check(guildcol, plot = TRUE)
+
+guild_scale <- scale_fill_manual(name = "Guild", values = guildcol)      
+guild_color <- scale_color_manual(name = "Guild", values = guildcol)
+
+# Just for LRE and SRE 
+guild_cols <- c("#C00000", "#58B4CB")
+palette_check(guild_cols, plot = TRUE)
+```
+
+
+
+
+## FIGURE 2 
+Proportion bar charts for  behavior and guild per site and total guild summary per site 
+```{r}
+
+# Proportion bar charts - appendix 
+bats1$Behavior <- bats1$behavior
+# bats$tempvar <- "Total bat activity by guild per site"
+bats1$tempvar <- "  "
+fig2a <- ggplot(bats1) + geom_bar(aes(x=Site, fill=Behavior), stat = "count", position = "fill") + 
+  scale_fill_grey() + facet_wrap(~guild) + ylab("") + xlab("") +
+   theme(legend.position = "bottom") + 
+   theme(text = element_text(size = 18),
+         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+         panel.background = element_blank(), axis.line = element_line(colour = "black"))
+fig2a
+
+fig2b <- ggplot(bats1) + geom_bar(aes(x=Site, fill=guild), stat = "count") + 
+  guild_scale + ylab("") + 
+   theme(legend.position = "bottom") +
+   theme(text = element_text(size = 18),
+         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+         panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  facet_grid(.~ tempvar ) +
+  theme(strip.background = element_rect(fill="gray"), strip.text = element_text(size=12, colour="black")) +
+  ylab("Total bat passes recorded") + xlab("Detector site")
+fig2b
+
+
+plot_grid(fig2a, fig2b, nrow = 2, labels = c("a.", "b."), label_size = 18) 
+
+
+```
+
+## FIGURE 3
+# Summary figure for unaggregated bat passes across all guilds, habitats across night
+```{r}
+summary(ground1)
+# xlim = c(2020-07-01, 2020-10-01)
+range <-  c(as.Date("2020-07-01"), as.Date("2020-10-01"))
+
+# ground level - seasonal
+groundplot<-
+  ggplot(ground1) + geom_count(aes(x=night, y=guild, color = guild)) + 
+  guild_color + facet_wrap(~Habitat, nrow = 2, 
+                           labeller = labeller(Habitat = c(
+                             "Natural" = "Natural", 
+                             "TurbinePad" = "Turbine Pad")))+ 
+  xlab("") +   
+  scale_x_date(limits = c(min = as.Date("2020-07-01"), 
+                          max = as.Date("2020-10-01"), limits = c(0,0))) + 
+  ylab("") + 
+  scale_size_continuous(breaks = c(20, 50, 200, 600), range = c(3, 10), name="") +
+  theme(
+    text = element_text(size = 18),
+    panel.background = element_rect(fill='transparent'),
+    plot.background = element_rect(fill='transparent', color=NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.background = element_rect(fill='transparent'),
+    legend.box.background = element_rect(fill='transparent', color = 'transparent'),
+    legend.position = c(0.96, 0.85), legend.key.size = unit(0.5, 'cm')) +
+    guides(color= "none")  
+
+groundplot
+
+# met tower - seasonal
+met_tot <- bats_tot %>% filter(Locality == "MeteorologicalTower") %>% droplevels() 
+# Need to make an active night column for the met tower 
+met_tot$activenight <- "Active"
+
+metplot<-
+  ggplot() + geom_count(data = met1, aes(x=night, y=guild, color = guild)) + 
+  geom_point(data = met_tot, aes(x = night, y = activenight), color = "black", shape = 17, alpha = 0.75, size = 3) + 
+  guild_color + facet_wrap(~Site, nrow = 2)+ 
+  xlab("") + 
+  scale_x_date(limits = c(min = as.Date("2020-07-01"), 
+                          max = as.Date("2020-10-01"), limits = c(0,0))) +
+  ylab("") + 
+  scale_size_continuous(breaks = c(4, 8, 16), range = c(3, 10), name="") +
+  theme(
+    text = element_text(size = 18),
+    panel.background = element_rect(fill='transparent'),
+    plot.background = element_rect(fill='transparent', color=NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.background = element_rect(fill='transparent'),
+    legend.box.background = element_rect(fill='transparent', color = 'transparent'),
+    legend.position = c(0.96, 0.83),legend.key.size = unit(0.5, 'cm')) +   
+    guides(color = "none")  
+
+metplot
+
+plot_grid(groundplot_trees, metplot_trees, nrow = 2)
+
+```
+
+
+## Appendix - figure S1 
+```{r}
+### activity across ground level sites between north and south 
+
+figs1b <- bats_allnight %>% filter( Habitat != "MeteorologicalTower") %>% droplevels() %>% 
+  ggplot() + 
+  geom_point(aes(x = night, y = active.night), shape = 19, color = "#cfc5b7") + 
+  geom_count(data = bats_allnight[bats_allnight$Batpass>0,], aes(x = night, y = bats.active), 
+             shape = 19, color = "black", alpha = 0.5) +  scale_size_area() + 
+  facet_wrap(~Facility, nrow = 2) + 
+  xlab("Night in Survey Period") + ylab(" ") +
+  scale_y_discrete(labels = c(
+    "TRUE" = "Active detector night", "Yes" = "Bats detected")) + 
+  ggtitle("Survey effort and data collection for each facility") + 
+  labs(size = "Active detecors per night", 
+       subtitle = "Ground level detectors only") + 
+  theme(legend.position="bottom") +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(), 
+        text = element_text(size = 12),
+        axis.line = element_line(colour = "black"))
+figs1b
+
+### activity across ground level sites 
+figs1a <- bats_allnight %>% ggplot() + 
+  geom_point(aes(x = night, y = active.night), shape = 19, color = "#cfc5b7") + 
+  geom_point(data = bats_allnight[bats_allnight$Batpass>0,], aes(x = night, y = bats.active), 
+             shape = 19, color = "black") +  scale_size_area() + 
+  facet_wrap(~Site, nrow = 8) + 
+  xlab("Night in Survey Period") + ylab(" ") +
+  scale_y_discrete(labels = c(
+    "TRUE" = "Active detector night", "Yes" = "Bats detected")) + 
+  ggtitle("Survey effort and data collection for each detector site") + 
+  labs(size = "Active detecors per night") + 
+  theme(legend.position="bottom") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(), 
+        text = element_text(size = 12),
+        axis.line = element_line(colour = "black"))
+figs1a
+
+figureS1 <- plot_grid(figs1a, figs1b, ncol = 2, labels = c("a.", "b."))
+figureS1
+
+```
+
+## Appendix - figure S2
+Comparing manual and auto id acoustic analysis 
+Proportion test and McNemar test
+
+```{r}
+
+levels(bats1$auto)
+levels(bats1$manual.id)
+summary(bats1$auto)
+summary(bats1$manual.id)
+
+#                 LRE         MRE         SRE         NoID
+remember <-  c("#B40F20" , "#FCC200", "#46ACC8", "#999999") 
+
+id_bar <- ggstatsplot::ggbarstats(bats1, x= auto, y=manual.id, 
+                                  type = "nonparametric", paired = TRUE) +
+  scale_fill_manual(values = c(
+  "EPNI" = "#b11414", "VEMU" = "#ff7256", "NYNO" = "#dc143c", "LR1" = "#f4cccc", "LR2" = "#ea9999",
+  "PIPY" = "#ffe599", "PINA" = "#bf9000",  "MR1" = "#FCC200" ,
+  "BABA" = "#00b8ee", "PAUR" = "#0190ba",  "SR1" = "#046d8b", 
+  "NoID" = "#999999"
+  )) + 
+  xlab("Manually Identified Bat Taxa") + 
+  guides(fill=guide_legend("Automatic bat species")) + 
+  theme(text = element_text(size = 15), legend.position="bottom") +
+  ggtitle("")
+
+id_bar
+# 
+#"Decides whether proportion test for x variable is to be carried out for each level of y. #Defaults to results.subtitle. In ggbarstats, only p-values from this test will be #displayed."
+
+id_bar_table <- id_bar$data # write table of results 
+#write.csv(id_bar_table, "id_bar_table.perc.csv")
+
+id_bar
+# id_bar1 <- ggpmisc::delete_layers(id_bar, "GeomLabel") # remove percent lables 
+
+# Only one-sidded proportion test is conducted here, no McNemar's test. Most likely because auto and manual id levels do not perfectly match.  
+
+
+guild_bar <- ggstatsplot::ggbarstats(bats1, x= auto_guild, y=guild, 
+                                     type = "nonparametric", paired = TRUE) + 
+  ggplot2::scale_fill_manual(values = c(
+    "LRE" = "#B40F20" , "MRE" = "#FCC200", "SRE" = "#46ACC8", "NoID" = "#999999")) + 
+  ggplot2::xlab("Manually Identified Foraging Guilds") + 
+  guides(fill=guide_legend("Automatic guild")) + 
+  theme(legend.position="bottom") +
+  theme(text = element_text(size = 15)) + ggtitle("")
+guild_bar
+
+# Double check the mcnemar test results in the figure 
+g <- mcnemar.test(table(bats1$auto_guild, bats1$guild), correct = FALSE) 
+g 
+
+# data:  table(bats$auto_guild, bats$guild)
+# McNemar's chi-squared = 652.7, df = 6, p-value < 2.2e-16
+
+manualvsauto <- plot_grid(id_bar, guild_bar, labels = c("a. Species", "b. Foraging guilds"))
+
+manualvsauto
+
+```
+
+# Figure 4 part 1 (raw data without model predictions)
+Comparing weather patterns between the met and ground level sites 
+```{r met_vs_ground, echo = FALSE}
+
+# Figure 4a 
+ground1 <- ground %>% filter(batpass01_sum == 1) %>% droplevels() # detector nights when bats were active 
+ground0 <- ground %>% filter(batpass01_sum == 0) %>% droplevels() # detector nights when bats were inactive 
+
+ground1$tempvar <- "Ground level detector sites"
+
+groundplot1 <- ggplot() +
+  geom_count(data = ground1, 
+             aes(x = temp_mean, y = wind_mean), color = "black", alpha = 0.6, shape = 19) +
+  stat_ellipse(data = ground1, 
+               aes(x = temp_mean, y = wind_mean), 
+             fill = "grey", geom = "polygon", alpha = 0.3, 
+             linetype = 1, color = "black", size = 1.2)  +
+  geom_count(data = ground0, aes(x = temp_mean, y = wind_mean),
+              color = "black", alpha = 0.6, shape = 1) +
+  stat_ellipse(data = ground0, aes(x = temp_mean, y = wind_mean), 
+             fill = "grey", geom = "polygon", alpha = 0.3, 
+             linetype = 2, color = "black", size = 1.2)   + 
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(), 
+        text = element_text(size = 20),
+        axis.line = element_line(colour = "black"),
+        legend.position = c(0.90, 0.75), 
+        legend.title = element_blank(),
+        legend.background =  element_blank()) + 
+  scale_size_continuous(breaks = c(1,5,10)) +
+  xlab("Mean nightly temperature (\u00B0C)") + 
+  ylab("Mean nightly wind speed (m/s)")  + 
+  ylim(c(0,15)) + facet_wrap( .~tempvar)
+
+groundplot1
+
+
+## Figure b 
+met1 <- met %>% filter(batpass01_sum == 1) %>% droplevels() # bats active
+met0 <- met %>% filter(batpass01_sum == 0) %>% droplevels() # bats inactive 
+
+metplot1 <- ggplot() + 
+  geom_count(data = met1, 
+             aes(x = temp_mean, y = wind_mean), alpha = 0.6, shape = 18, show.legend = TRUE) +
+  stat_ellipse(data = met1,
+               aes(x = temp_mean, y = wind_mean), 
+             fill = "grey", geom = "polygon", alpha = 0.3, 
+             linetype = 1, color = "black", size = 1.2)  +  
+  geom_point(data = met0, 
+             aes(x = temp_mean, y = wind_mean), alpha = 0.6, shape = 5, size = 3, show.legend = FALSE) +
+  stat_ellipse(data = met0,
+               aes(x = temp_mean, y = wind_mean), 
+             fill = "grey", geom = "polygon", alpha = 0.3, 
+             linetype = 2, color = "black", size = 1.2)  +  
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        text = element_text(size = 20),
+        axis.line = element_line(colour = "black"), 
+        legend.position = c(0.90, 0.75), 
+        legend.title = element_blank()) +
+  facet_wrap(~Site, nrow = 1) +
+  ylim(c(0,15)) +
+  xlab("Mean nightly temperature (\u00B0C)") + 
+  ylab("Mean nightly wind speed (m/s)") # + ggtitle("Met tower, bats active") 
+
+metplot1
+
+fig4ab <- plot_grid(groundplot1, metplot1, nrow = 2, labels = c("a.", "b."))
+fig4ab
+# , labels = c("a.", "b.")
+```
+
+
+
+## Total bat activity GAM (Bats total)
+- Table S4 
+```{r, echo = FALSE}
+## Model total bat activty, count response 
+
+m1 <- gam(Batpass_sum ~
+              s(Locality, bs = "re") +                       
+              s(jnight, by = Habitat, bs = "gp", k = 25) +    
+              Habitat +                                     
+              temp_mean +                                
+              s(wind_mean, k = 10) ,                      
+              data = df, method = "REML",                 
+              family = nb(), select=TRUE)                
+
+summary(m1) 
+# Family: Negative Binomial(1.174) 
+# Link function: log 
+# 
+# Formula:
+# Batpass_sum ~ s(Locality, bs = "re") + s(jnight, by = Habitat, 
+#     bs = "gp", k = 25) + Habitat + temp_mean + s(wind_mean, 
+#     k = 10)
+# 
+# Parametric coefficients:
+#                   Estimate Std. Error z value Pr(>|z|)    
+# (Intercept)       -0.38896    0.43495  -0.894    0.371    
+# HabitatTurbinePad -0.01170    0.07229  -0.162    0.871    
+# temp_mean          0.18127    0.02285   7.935 2.11e-15 ***
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# Approximate significance of smooth terms:
+#                                edf Ref.df Chi.sq p-value    
+# s(Locality)                  5.865      6 261.52  <2e-16 ***
+# s(jnight):HabitatNatural     6.989     24 103.74  <2e-16 ***
+# s(jnight):HabitatTurbinePad 11.695     24 185.96  <2e-16 ***
+# s(wind_mean)                 3.763      9  81.44  <2e-16 ***
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# R-sq.(adj) =  0.367   Deviance explained = 58.9%
+# -REML = 2915.7  Scale est. = 1         n = 811
+
+
+# Printable summary tables 
+
+options(knitr.table.format = "html") 
+
+# Table of the parametric effects
+mpara <- tidy(m1, parametric = TRUE, conf.int = TRUE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(mpara) <- c("Parametric terms", "Estimate", "SE", "z-value", "P", "CI (LL)", "CI (UL)") 
+
+mpara$"Parametric terms" <- gsub("Intercept",
+                                 "Habitat = Natural",
+                                 mpara$"Parametric terms")
+
+mpara$"Parametric terms" <- gsub("HabitatTurbinePad",
+                                 "Habitat = Turbine pad",
+                                 mpara$"Parametric terms")
+
+mpara$"Parametric terms" <- gsub("temp_mean",
+                                 "Average nightly temperature",
+                                 mpara$"Parametric terms")
+
+mparatab <- kable(mpara)  %>%
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+mparatab
+
+
+# Table of the smooth effects
+msmooth <- tidy(m1, parametric = FALSE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(msmooth) <- c("Smooth terms", "Estimate", "edf", "Chi.sq", "P") 
+msmooth$`Smooth terms` <- as.factor(msmooth$`Smooth terms`)
+levels(msmooth$`Smooth terms`) <- (c(
+  "Locality", "Julian night: Habitat = Natural",
+  "Julian night: Habitat = Turbine pad", "Average nightly wind speed" ))
+
+msmoothtab <- kable(msmooth) %>% 
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+msmoothtab
+
+```
+
+## Model m1 (bats total), diagnostic plots
+```{r model_m1_diagnostics, echo = FALSE}
+# windows()
+par(mfrow = c(2,2))
+gam.check(m1)           
+gam.check(m1, rep=500)  
+
+overdispersion.m1 <- sum( residuals(m1, "pearson")^2 ) / m1$df.residual
+overdispersion.m1
+# 1.295905
+
+plot(m1, pages=1,scheme=2,shade=TRUE,seWithMean = TRUE)
+
+draw(m1, scales ="free")         #function 'draw' is from package 'gratia'
+draw(m1, scales ="fixed")
+
+```
+
+--------------------------------------------------------------------------------
+
+## Make prediction figures
+Visualize the wind and temperature cutoffs
+
+```{r prepare_data_predictions, echo = FALSE, results = FALSE}
+
+names(df)
+levels(df$Locality)
+
+# Quick summary in the differences in bat activity recorded at the different sites
+ggplot(df) + geom_bar(aes(x=Site, y = Batpass_sum), stat = "identity") 
+
+# -----------------------------------------------------------------------------
+# Wind and temperature are fixed 
+
+# Turbine 9
+newdata1 <- expand.grid(temp_mean = 14,
+                          wind_mean = 7,
+                          Habitat = levels(df$Habitat),
+                          Locality = "Turbine9",
+                          jnight = seq(min(df$jnight), max(df$jnight), 1))
+
+# -----------------------------------------------------------------------------
+# Fitting predictions
+
+
+# Wind and temperature are fixed
+fit1 <- predict.gam(m1, newdata = newdata1, se.fit = TRUE, type = "response")
+fit1df <- data.frame(newdata1, fit1)
+fit1df <- transform(fit1df, upper = fit + (2*se.fit), lower = fit-(2*se.fit))
+summary(fit1df)
+
+```
+
+## Plotting predictions
+Comparing habitats across seasons
+```{r m1_plotting_predictions, echo = FALSE}
+
+# Convert jnight to night
+fit1df$night <- as.Date(fit1df$jnight, origin = "2020-01-01" )
+
+# Alternative labels for habitat facets
+habitat <- c("Natural", "Turbine pad")
+
+# Turbine 9
+plotm1 <- fit1df %>% ggplot(aes(x=night, y=fit)) +
+  geom_line(color = "black", size = 1.5) +
+  facet_wrap(~Habitat, nrow = 1, 
+             labeller = as_labeller(c("Natural" = "Natural", "TurbinePad" = "Turbine pad"))) + 
+  ggtitle("Total bat activity") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'grey', alpha = 0.4) +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 15),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none") +
+  xlab("") + ylab("")
+plotm1
+
+```
+
+
+--------------------------------------------------------------------------------
+# Figure 4 part 2 
+Plotting predictions of wind and temperature on total bat activity, ground level 
+```{r m1_weather_figures, echo = FALSE}
+
+# For plotting temp 
+newdata_temp<- expand.grid(temp_mean = c(4, 10, 16, 20),
+                          wind_mean = seq(min(df$wind_mean), max(df$wind_mean), length = 300),
+                          Habitat = levels(df$Habitat),
+                          Locality = "Turbine9",
+                          jnight = 212)  
+
+
+# Turbine 9, fewer wind and temp values 
+fit_temp <- predict.gam(m1, newdata = newdata_temp, se.fit=TRUE, type = "response")
+fit_temp_df <- data.frame(newdata_temp, fit_temp)
+fit_temp_df <- transform(fit_temp_df, upper = fit + (2*se.fit), lower = fit-(2*se.fit))
+summary(fit_temp_df)
+
+# Convert jnight to night
+fit_temp_df$night <- as.Date(fit_temp_df$jnight, origin = "2020-01-01" )
+
+
+new_labels <- c("4" = "4 (\u00B0C)", "10" = "10 (\u00B0C)", "16" = "16 (\u00B0C)", "20" = "20 (\u00B0C)") 
+                
+#°C = (\u00B0C) 
+
+plt1 <- fit_temp_df  %>% 
+  ggplot( aes(x=wind_mean, y = fit, group = factor(temp_mean))) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'grey', alpha = 0.5) +
+  geom_line() + facet_wrap(~ temp_mean, scales ='fixed', 
+                           labeller = labeller(temp_mean = new_labels), nrow = 1) +
+  labs(x = "Mean wind speed m/s", y ="Bat passes per night") +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 20),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none")
+plt1
+
+
+## ----------------------------------------------------------------------------
+
+## For plotting wind 
+summary(df$temp_mean)
+
+# Turbine 9, fewer temp and wind variables
+newdata_wind<- expand.grid(temp_mean = seq(min (df$temp_mean), max (df$temp_mean), length = 300),
+                          wind_mean = c(2, 5, 6.5, 12),
+                          Habitat = levels(df$Habitat),
+                          Locality = "Turbine9",
+                          jnight = 212) 
+
+
+fit_wind <- predict.gam(m1, newdata = newdata_wind, se.fit=TRUE, type = "response")
+fit_wind_df <- data.frame(newdata_wind, fit_wind)
+fit_wind_df <- transform(fit_wind_df, upper = fit + (2*se.fit), lower = fit-(2*se.fit))
+summary(fit_wind_df)
+
+## Plotting wind speeds at various temperatures 
+new_labels <- c("2" = "2 m/s", "5" = "5 m/s", "6.5" = "6.5 m/s", "12" = "12 m/s")
+
+# Count response
+plt2 <- fit_wind_df %>% 
+  ggplot(aes(x=temp_mean, y = fit, group = factor(wind_mean))) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'grey', alpha = 0.5) +
+  geom_line() + facet_wrap(~ wind_mean, scales ='fixed', 
+                           labeller = labeller(wind_mean = new_labels), nrow = 1) +
+  labs(x = "Mean temperature (\u00B0C)", 
+       y ="Bat passes per night") +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 20),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none")
+plt2
+
+fig4cd <- plot_grid(plt1, plt2, nrow = 2, labels = c("c.", "d."))
+fig4cd
+
+fig4 <- plot_grid(fig4ab, fig4cd, nrow = 1)
+fig4 
+
+```
+
+
+--------------------------------------------------------------------------------
+## Guild - Behavior subsetted GAMs 
+SRE and LRE activity, feeding and commuting 
+--------------------------------------------------------------------------------
+
+
+## m_SREf
+SRE feeding  
+```{r m_SREf, echol = FALSE}
+
+m_SREf <- gam(Batpass_sum~
+              s(Locality, bs = "re") + 
+              Habitat + 
+              s(jnight, by = Habitat, bs = "gp", k = 15) +
+              temp_mean +
+              s(wind_mean, k = 10),                     
+              data = SREf, method = "REML",                  
+              family = nb(), select=TRUE)                
+
+summary(m_SREf) #
+# Family: Negative Binomial(0.361) 
+# Link function: log 
+# 
+# Formula:
+# Batpass_sum ~ s(Locality, bs = "re") + Habitat + s(jnight, 
+#     by = Habitat, bs = "gp", k = 15) + temp_mean + s(wind_mean, 
+#     k = 10)
+# 
+# Parametric coefficients:
+#                   Estimate Std. Error z value Pr(>|z|)    
+# (Intercept)       -6.13828    0.82094  -7.477 7.60e-14 ***
+# HabitatTurbinePad -1.17560    0.26300  -4.470 7.82e-06 ***
+# temp_mean          0.27386    0.04264   6.423 1.33e-10 ***
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# Approximate significance of smooth terms:
+#                                edf Ref.df Chi.sq p-value    
+# s(Locality)                 5.4831      6 96.475 < 2e-16 ***
+# s(jnight):HabitatNatural    1.9856     14  8.513 0.00982 ** 
+# s(jnight):HabitatTurbinePad 0.5709     14  0.892 0.20103    
+# s(wind_mean)                2.2811      9 11.777 0.00207 ** 
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# R-sq.(adj) =  -0.119   Deviance explained = 53.9%
+# -REML = 440.28  Scale est. = 1         n = 811
+
+```
+
+##  SREf summary tables 
+```{r m_SREf-nicetables, echo = FALSE}
+# Table of the parametric effects
+ 
+mpara <- tidy(m_SREf, parametric = TRUE, conf.int = TRUE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(mpara) <- c("Parametric terms", "Estimate", "SE", "z-value", "P", "CI (LL)", "CI (UL)") 
+
+mpara$"Parametric terms" <- gsub("Intercept",
+                                 "Habitat = Natural",
+                                 mpara$"Parametric terms")
+
+mpara$"Parametric terms" <- gsub("HabitatTurbinePad",
+                                 "Habitat = Turbine pad",
+                                 mpara$"Parametric terms")
+
+mpara$"Parametric terms" <- gsub("temp_mean",
+                                 "Average nightly temperature",
+                                 mpara$"Parametric terms")
+
+mparatab <- kable(mpara)  %>%
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+mparatab
+
+
+# Table of the smooth effects
+msmooth <- tidy(m_SREf, parametric = FALSE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(msmooth) <- c("Smooth terms", "Estimate", "edf", "Chi.sq", "P") 
+msmooth$`Smooth terms` <- as.factor(msmooth$`Smooth terms`)
+levels(msmooth$`Smooth terms`) <- (c(
+  "Locality", "Julian night: Habitat = Natural",
+  "Julian night: Habitat = Turbine pad", "Average nightly wind speed" ))
+
+msmoothtab <- kable(msmooth) %>% 
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+msmoothtab
+```
+
+## Diagnostic plots - SRE feeding 
+```{r SREf diagnostics, echo = FALSE}
+par(mfrow = c(2,2))
+gam.check(m_SREf)           
+gam.check(m_SREf, rep=500) 
+
+overdispersion.m_SREf <- sum( residuals(m_SREf, "pearson")^2 ) / m_SREf$df.residual
+overdispersion.m_SREf
+# 0.9047528
+
+plot(m_SREf, pages=1,scheme=2,shade=TRUE,seWithMean = TRUE)
+
+draw(m_SREf, scales ="free")         
+draw(m_SREf, scales ="fixed")
+
+```
+
+--------------------------------------------------------------------------------
+
+## Making predictions
+SRE feeding
+
+```{r SREf_plotting_predictions, echo = FALSE}
+
+names(SREf)
+levels(SREf$Locality)
+summary(SREf$wind_mean)
+summary(SREf$temp_mean)
+# Quick summary in the differences in bat activity recorded at the different sites
+ggplot(SREf) + geom_bar(aes(x=Site, y = Batpass_sum), stat = "identity") 
+
+# -----------------------------------------------------------------------------
+# Wind and temperature are fixed
+
+# Turbine 9
+newdata1 <- expand.grid(temp_mean = 14,
+                          wind_mean = 7,
+                          Habitat = levels(SREf$Habitat),
+                          Locality = "Turbine9",
+                          jnight = seq(min(SREf$jnight), max(SREf$jnight), 1))
+# ----------------------------------------------------------------------------
+
+```
+
+
+## Comparing habitats across seasons
+```{r  SREf_hplot, echo = FALSE}
+
+# Wind and temperature are fixed
+
+# Turbine 9
+fit1 <- predict.gam(m_SREf, newdata = newdata1, se.fit = TRUE, type = "response")
+fit1df <- data.frame(newdata1, fit1)
+fit1df <- transform(fit1df, upper = fit + (2*se.fit), lower = fit-(2*se.fit))
+summary(fit1df)
+
+fit1df$night <- as.Date(fit1df$jnight, origin = "2020-01-01")
+# Turbine 9
+SREf_hplot<-
+  fit1df %>% ggplot(aes(x=night, y=fit)) +
+  geom_line(color = "black", size = 1.5) + facet_wrap(~Habitat,
+   labeller = as_labeller(c("Natural" = "Natural", "TurbinePad" = "Turbine pad"))) + 
+  ggtitle("SRE - Feeding activity") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = '#58B4CB', alpha = 0.4) +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 15),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none") +
+ xlab("") + ylab("") 
+  
+ SREf_hplot
+
+```
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+# m_SREc
+Count response 
+```{r m_SREc, echo = FALSE}
+
+m_SREc <- gam(Batpass_sum~
+              s(Locality, bs = "re") + 
+              Habitat + 
+              s(jnight, by = Habitat, bs = "gp", k = 15) +
+              temp_mean +
+              s(wind_mean, k = 10),                     
+              data = SREc, method = "REML",                  
+              family = nb(), select=TRUE)                
+
+summary(m_SREc) #
+
+# Family: Negative Binomial(1.317) 
+# Link function: log 
+# 
+# Formula:
+# Batpass_sum ~ s(Locality, bs = "re") + Habitat + s(jnight, 
+#     by = Habitat, bs = "gp", k = 15) + temp_mean + s(wind_mean, 
+#     k = 10)
+# 
+# Parametric coefficients:
+#                   Estimate Std. Error z value Pr(>|z|)    
+# (Intercept)       -1.16197    0.44759  -2.596  0.00943 ** 
+# HabitatTurbinePad -0.43081    0.08074  -5.336 9.52e-08 ***
+# temp_mean          0.14752    0.02272   6.494 8.36e-11 ***
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# Approximate significance of smooth terms:
+#                               edf Ref.df Chi.sq p-value    
+# s(Locality)                 5.864      6 300.79 < 2e-16 ***
+# s(jnight):HabitatNatural    7.006     14  31.10 0.00219 ** 
+# s(jnight):HabitatTurbinePad 4.638     14  65.10 < 2e-16 ***
+# s(wind_mean)                3.692      9  63.77 < 2e-16 ***
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# R-sq.(adj) =  0.171   Deviance explained =   52%
+# -REML = 1816.3  Scale est. = 1         n = 811
+
+```
+
+## Diagnostic plots
+```{r SREc diagnostics, echo = FALSE}
+par(mfrow = c(2,2))
+gam.check(m_SREc)           
+gam.check(m_SREc, rep=500) 
+
+overdispersion.m_SREc <- sum( residuals(m_SREc, "pearson")^2 ) / m_SREc$df.residual
+overdispersion.m_SREc
+# 1.331561
+
+plot(m_SREc, pages=1,scheme=2,shade=TRUE,seWithMean = TRUE)
+
+draw(m_SREc, scales ="free")         
+draw(m_SREc, scales ="fixed")
+
+```
+
+--------------------------------------------------------------------------------
+## Summary tables 
+```{r m_SREc-nicetables, echo = FALSE}
+# Table of the parametric effects
+ 
+mpara <- tidy(m_SREc, parametric = TRUE, conf.int = TRUE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(mpara) <- c("Parametric terms", "Estimate", "SE", "z-value", "P", "CI (LL)", "CI (UL)") 
+
+mpara$"Parametric terms" <- gsub("Intercept",
+                                 "Habitat = Natural",
+                                 mpara$"Parametric terms")
+
+mpara$"Parametric terms" <- gsub("HabitatTurbinePad",
+                                 "Habitat = Turbine pad",
+                                 mpara$"Parametric terms")
+
+mpara$"Parametric terms" <- gsub("temp_mean",
+                                 "Average nightly temperature",
+                                 mpara$"Parametric terms")
+
+mparatab <- kable(mpara)  %>%
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+mparatab
+
+
+# Table of the smooth effects
+msmooth <- tidy(m_SREc, parametric = FALSE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(msmooth) <- c("Smooth terms", "Estimate", "edf", "Chi.sq", "P") 
+msmooth$`Smooth terms` <- as.factor(msmooth$`Smooth terms`)
+levels(msmooth$`Smooth terms`) <- (c(
+  "Locality", "Julian night: Habitat = Natural",
+  "Julian night: Habitat = Turbine pad", "Average nightly wind speed" ))
+
+msmoothtab <- kable(msmooth) %>% 
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+msmoothtab
+
+```
+
+
+## Making predictions
+SRE commuting
+```{r SREc_plotting_predictions, echo = FALSE}
+
+names(SREc)
+levels(SREc$Locality)
+summary(SREc$wind_mean)
+summary(SREc$temp_mean)
+# Quick summary in the differences in bat activity recorded at the different sites
+ggplot(SREc) + geom_bar(aes(x=Site, y = Batpass_sum), stat = "identity") 
+
+# -----------------------------------------------------------------------------
+# Wind and temperature are fixed
+
+# Turbine 9
+newdata1 <- expand.grid(temp_mean = 14,
+                          wind_mean = 7,
+                          Habitat = levels(SREc$Habitat),
+                          Locality = "Turbine9",
+                          jnight = seq(min(SREc$jnight), max(SREc$jnight), 1))
+
+
+```
+
+
+## Comparing habitats across seasons
+```{r  SREc_hplot, echo = FALSE}
+
+############################################
+# # Fitting predictions
+############################################
+
+# Wind and temperature are fixed
+
+# Turbine 9
+fit1 <- predict.gam(m_SREc, newdata = newdata1, se.fit = TRUE, type = "response")
+fit1df <- data.frame(newdata1, fit1)
+fit1df <- transform(fit1df, upper = fit + (2*se.fit), lower = fit-(2*se.fit))
+summary(fit1df)
+
+# # Turbine 2
+# fit1a <- predict.gam(m_SREc, newdata = newdata1a, se.fit = TRUE, type = "response")
+# fit1adf <- data.frame(newdata1a, fit1a)
+# fit1adf <- transform(fit1adf, upper = fit + (2*se.fit), lower = fit-(2*se.fit))
+# summary(fit1adf)
+
+fit1df$night <- as.Date(fit1df$jnight, origin = "2020-01-01" )
+
+# Turbine 9
+SREc_hplot<-
+  fit1df %>% ggplot(aes(x=night, y=fit)) +
+  geom_line(color = "black", size = 1.5) + facet_wrap(~Habitat,
+   labeller = as_labeller(c("Natural" = "Natural", "TurbinePad" = "Turbine pad"))) + 
+  ggtitle("SRE - Commuting activity") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = '#58B4CB', alpha = 0.4) +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 15),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none") +
+  xlab("") + ylab("")
+  
+ SREc_hplot
+  
+```
+
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+# m_LREf
+Count response 
+```{r m_LREf, echo = FALSE}
+
+m_LREf <- gam(Batpass_sum~
+              s(Locality, bs = "re") + 
+              Habitat + 
+              s(jnight, by = Habitat, bs = "gp", k = 5) +
+              temp_mean +
+              s(wind_mean, k = 5),                     
+              data = LREf, method = "REML",                  
+              family = nb(), select=TRUE)                
+
+summary(m_LREf) #
+
+# Family: Negative Binomial(0.393) 
+# Link function: log 
+# 
+# Formula:
+# Batpass_sum ~ s(Locality, bs = "re") + Habitat + s(jnight, 
+#     by = Habitat, bs = "gp", k = 5) + temp_mean + s(wind_mean, 
+#     k = 5)
+# 
+# Parametric coefficients:
+#                   Estimate Std. Error z value Pr(>|z|)    
+# (Intercept)       -5.40262    0.73371  -7.363 1.79e-13 ***
+# HabitatTurbinePad  0.81871    0.16338   5.011 5.41e-07 ***
+# temp_mean          0.30355    0.02863  10.602  < 2e-16 ***
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# Approximate significance of smooth terms:
+#                                edf Ref.df Chi.sq  p-value    
+# s(Locality)                 5.8827      6 297.90  < 2e-16 ***
+# s(jnight):HabitatNatural    0.9822      4  72.55  < 2e-16 ***
+# s(jnight):HabitatTurbinePad 1.8133      4  36.96 1.65e-06 ***
+# s(wind_mean)                2.3756      4  29.65 7.96e-07 ***
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# R-sq.(adj) =  -0.364   Deviance explained = 59.3%
+# -REML = 1250.5  Scale est. = 1         n = 811
+
+```
+
+
+```{r SREf diagnostics, echo = FALSE}
+
+par(mfrow = c(2,2))
+gam.check(m_SREf)           
+gam.check(m_SREf, rep=500) 
+
+overdispersion.m_SREf <- sum( residuals(m_SREf, "pearson")^2 ) / m_SREf$df.residual
+overdispersion.m_SREf
+
+
+plot(m_SREf, pages=1,scheme=2,shade=TRUE,seWithMean = TRUE)
+
+draw(m_SREf, scales ="free")         
+draw(m_SREf, scales ="fixed")
+
+```
+
+
+## Summary tables 
+```{r m_LREf-nicetables, echo = FALSE}
+# Table of the parametric effects
+ 
+mpara <- tidy(m_LREf, parametric = TRUE, conf.int = TRUE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(mpara) <- c("Parametric terms", "Estimate", "SE", "z-value", "P", "CI (LL)", "CI (UL)") 
+
+mpara$"Parametric terms" <- gsub("Intercept",
+                                 "Habitat = Natural",
+                                 mpara$"Parametric terms")
+
+mpara$"Parametric terms" <- gsub("HabitatTurbinePad",
+                                 "Habitat = Turbine pad",
+                                 mpara$"Parametric terms")
+
+mpara$"Parametric terms" <- gsub("temp_mean",
+                                 "Average nightly temperature",
+                                 mpara$"Parametric terms")
+
+mparatab <- kable(mpara)  %>%
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+mparatab
+
+
+# Table of the smooth effects
+msmooth <- tidy(m_LREf, parametric = FALSE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(msmooth) <- c("Smooth terms", "Estimate", "edf", "Chi.sq", "P") 
+msmooth$`Smooth terms` <- as.factor(msmooth$`Smooth terms`)
+levels(msmooth$`Smooth terms`) <- (c(
+  "Locality", "Julian night: Habitat = Natural",
+  "Julian night: Habitat = Turbine pad", "Average nightly wind speed" ))
+
+
+msmoothtab <- kable(msmooth) %>% 
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+msmoothtab
+
+```
+
+--------------------------------------------------------------------------------
+
+## Making predictions
+LRE feeding
+
+```{r LREf_plotting_predictions, echo = FALSE}
+
+names(LREf)
+levels(LREf$Locality)
+summary(LREf$wind_mean)
+summary(LREf$temp_mean)
+# Quick summary in the differences in bat activity recorded at the different sites
+ggplot(LREf) + geom_bar(aes(x=Site, y = Batpass_sum), stat = "identity") 
+
+# -----------------------------------------------------------------------------
+# Wind and temperature are fixed
+
+# Turbine 9
+newdata1 <- expand.grid(temp_mean = 14,
+                          wind_mean = 7,
+                          Habitat = levels(LREf$Habitat),
+                          Locality = "Turbine9",
+                          jnight = seq(min(LREf$jnight), max(LREf$jnight), 1))
+
+
+```
+
+
+## Comparing habitats across seasons
+```{r LREf_hplot, echo = FALSE}
+
+############################################
+# # Fitting predictions
+############################################
+
+# Wind and temperature are fixed
+
+fit1 <- predict.gam(m_LREf, newdata = newdata1, se.fit = TRUE, type = "response")
+fit1df <- data.frame(newdata1, fit1)
+fit1df <- transform(fit1df, upper = fit + (2*se.fit), lower = fit-(2*se.fit))
+summary(fit1df)
+
+
+fit1df$night <- as.Date(fit1df$jnight, origin = "2020-01-01" )
+
+# Turbine 9
+LREf_hplot<-
+  fit1df %>% ggplot(aes(x=night, y=fit)) +
+  geom_line(color = "black", size = 1.5) + facet_wrap(~Habitat,
+   labeller = as_labeller(c("Natural" = "Natural", "TurbinePad" = "Turbine pad"))) + 
+  ggtitle("LRE - Feeding activity") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = '#C00000', alpha = 0.4) +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 15),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none") +
+  xlab("") + ylab("")
+  
+ LREf_hplot
+  
+```
+
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+# m_LREc
+LRE commuting 
+```{r m_LREc, echo = FALSE}
+
+m_LREc <- gam(Batpass_sum~
+              s(Locality, bs = "re") + 
+              Habitat + 
+              s(jnight, by = Habitat, bs = "gp", k = 30) +
+              temp_mean +
+              s(wind_mean, k = 15),                     
+              data = LREc, method = "REML",                  
+              family = nb(), select=TRUE)                
+
+summary(m_LREc) #
+
+# Family: Negative Binomial(1.121) 
+# Link function: log 
+# 
+# Formula:
+# Batpass_sum ~ s(Locality, bs = "re") + Habitat + s(jnight, 
+#     by = Habitat, bs = "gp", k = 30) + temp_mean + s(wind_mean, 
+#     k = 15)
+# 
+# Parametric coefficients:
+#                   Estimate Std. Error z value Pr(>|z|)    
+# (Intercept)       -1.89811    0.48842  -3.886 0.000102 ***
+# HabitatTurbinePad  0.41463    0.08183   5.067 4.05e-07 ***
+# temp_mean          0.21283    0.02567   8.292  < 2e-16 ***
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# Approximate significance of smooth terms:
+#                                edf Ref.df Chi.sq p-value    
+# s(Locality)                  5.868      6 257.61  <2e-16 ***
+# s(jnight):HabitatNatural     7.791     29 217.63  <2e-16 ***
+# s(jnight):HabitatTurbinePad 14.534     29 221.84  <2e-16 ***
+# s(wind_mean)                 3.425     14  47.57  <2e-16 ***
+# ---
+# Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+# 
+# R-sq.(adj) =  0.413   Deviance explained = 62.4%
+# -REML =   2362  Scale est. = 1         n = 811
+
+```
+
+
+```{r LREc diagnostics, echo = FALSE}
+par(mfrow = c(2,2))
+gam.check(m_LREc)           
+gam.check(m_LREc, rep=500) 
+
+overdispersion.m_LREc <- sum( residuals(m_LREc, "pearson")^2 ) / m_LREc$df.residual
+overdispersion.m_LREc
+# 1.273853
+
+plot(m_LREc, pages=1,scheme=2,shade=TRUE,seWithMean = TRUE)
+
+draw(m_LREc, scales ="free")         
+draw(m_LREc, scales ="fixed")
+
+```
+
+--------------------------------------------------------------------------------
+
+```{r}
+mpara <- tidy(m_LREc, parametric = TRUE, conf.int = TRUE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(mpara) <- c("Parametric terms", "Estimate", "SE", "z-value", "P", "CI (LL)", "CI (UL)") 
+
+mpara$"Parametric terms" <- gsub("Intercept",
+                                 "Habitat = Natural",
+                                 mpara$"Parametric terms")
+
+mpara$"Parametric terms" <- gsub("HabitatTurbinePad",
+                                 "Habitat = Turbine pad",
+                                 mpara$"Parametric terms")
+
+mpara$"Parametric terms" <- gsub("temp_mean",
+                                 "Average nightly temperature",
+                                 mpara$"Parametric terms")
+
+mparatab <- kable(mpara)  %>%
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+mparatab
+
+
+# Table of the smooth effects
+msmooth <- tidy(m_LREc, parametric = FALSE) %>% 
+  mutate_if(is.numeric, format, digits=3) 
+
+colnames(msmooth) <- c("Smooth terms", "Estimate", "edf", "Chi.sq", "P") 
+msmooth$`Smooth terms` <- as.factor(msmooth$`Smooth terms`)
+levels(msmooth$`Smooth terms`) <- (c(
+  "Locality", "Julian night: Habitat = Natural",
+  "Julian night: Habitat = Turbine pad", "Average nightly wind speed" ))
+
+msmoothtab <- kable(msmooth) %>% 
+  kable_minimal() %>% 
+  row_spec(0, italic = TRUE) 
+msmoothtab
+```
+
+
+## Making predictions
+LRE commuting
+
+```{r LREc_plotting_predictions, echo = FALSE}
+names(LREc)
+levels(LREc$Locality)
+summary(LREc$wind_mean)
+summary(LREc$temp_mean)
+# Quick summary in the differences in bat activity recorded at the different sites
+ggplot(LREc) + geom_bar(aes(x=Site, y = Batpass_sum), stat = "identity") 
+
+# -----------------------------------------------------------------------------
+# Wind and temperature are fixed
+
+# Turbine 9
+newdata1 <- expand.grid(temp_mean = 14,
+                          wind_mean = 7,
+                          Habitat = levels(LREc$Habitat),
+                          Locality = "Turbine9",
+                          jnight = seq(min(LREc$jnight), max(LREc$jnight), 1))
+
+```
+
+
+## Comparing habitats across seasons
+LRE commuting 
+```{r LREc_hplot, echo = FALSE}
+############################################
+# # Fitting predictions
+############################################
+
+# Wind and temperature are fixed
+# Turbine 9
+fit1 <- predict.gam(m_LREc, newdata = newdata1, se.fit = TRUE, type = "response")
+fit1df <- data.frame(newdata1, fit1)
+fit1df <- transform(fit1df, upper = fit + (2*se.fit), lower = fit-(2*se.fit))
+summary(fit1df)
+
+
+fit1df$night <- as.Date(fit1df$jnight, origin = "2020-01-01" )
+
+# Turbine 9
+LREc_hplot<-
+  fit1df %>% ggplot(aes(x=night, y=fit)) +
+  geom_line(color = "black", size = 1.5) + facet_wrap(~Habitat,
+   labeller = as_labeller(c("Natural" = "Natural", "TurbinePad" = "Turbine pad"))) + 
+  ggtitle("LRE - Commuting activity") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = '#C00000', alpha = 0.4) +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 15),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none") +
+  xlab("") + ylab("")
+  
+ LREc_hplot
+  
+```
+
+
+
+## Figure 5 - all 4 guild-behavior gam predictions combined 
+
+```{r}
+
+fig5 <-  plot_grid(SREf_hplot, SREc_hplot, LREf_hplot, LREc_hplot, labels = c(
+  "a.", 
+  "b.",
+  "c.", 
+  "d."),label_size = 20, nrow = 4)
+fig5
+
+```
+

@@ -1,0 +1,428 @@
+
+---
+title: "Cleaning bat acoustic data"
+output: html_document
+date: "2022-11-25"
+---
+
+##  Work environment set up 
+
+Input: Results of the manual acoustic analysis for bat acoustic data collected at the Marker wind park. 
+All acoustic analysis done by Reed April McKay. 
+The dataset is a combination of all the csv files from each detector site location. 
+
+Goal: 
+Remove noise files, spelling errors, and simplify syntax for exploration and aggregation. 
+
+Output: 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+knitr::opts_chunk$set(tidy = "styler")
+
+
+#### Load libraries ####
+library(data.table)
+library(tidyverse)
+library(beepr)
+library(lubridate)
+library(purrr)
+library(renv)
+library(stringr)
+library(janitor)
+
+#### Import data  ####
+
+# for Reed 
+input <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Input"
+
+dataset1 <- "1_Marker2020_ManualID_withnoise_original.csv"
+
+path1 <- str_c(input, "/", dataset1)
+
+
+manual_output <- read_csv(path1) #257516 passes with noise
+str(manual_output) #27516 obs of 47 variables - all recordings processed through Kaleidoscope pro combined from all sites, with file directories describing site origins and data collection times.
+
+# for Reed
+output <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Reed/Outputs"
+
+# for Katrine 
+#output <- ""
+
+
+## 
+ file.name <- "Step1.cleaning bat acoustic data"
+# 
+ todays_date <- Sys.Date()
+# 
+dir.name <- str_c(output,"/", file.name, "_", todays_date)
+ dir.name
+# 
+ dir.create(dir.name)
+
+output_today <- dir.name 
+
+setwd(output_today)
+getwd()
+
+```
+
+
+# Remove noise, clean typos and simplify syntax
+```{r}
+
+#### Remove noise files ####
+
+manual_output$AUTO.ID. <- as.factor(manual_output$AUTO.ID.)
+
+manual_output1 <- manual_output %>% filter(AUTO.ID. != "Noise")
+# 19297 passes (not yet parsed for passes with multiple passes)
+# 257516 - 19297 = 238219 noise files. 
+
+#### Standardize manual ids ####
+
+
+manual_output1$m_id <- as.factor(manual_output1$MANUAL.ID) 
+summary(manual_output1$m_id)
+
+
+# Edit a file name that should have been left in the raw format
+
+fixthis1 <- subset(manual_output1, IN.FILE == "S4U10067_20200716_232445_000_SREwLRE.wav")
+fixthis1$IN.FILE <- gsub("_SREwLRE", "", fixthis1$IN.FILE)
+fixthis1$MANUAL.ID <- "SRE__LRE"
+
+# drop the original observation from the dataset and replace it with the fixed observation 
+manual_output2 <- manual_output1 %>% filter(IN.FILE != "S4U10067_20200716_232445_000_SREwLRE.wav") # dropped one observation 
+manual_output3 <- full_join(manual_output2, fixthis1) # added back one observation 
+# no more NAs in the MANUAL.ID column 
+
+## This file S4U08483_20200808_002648.wav was tagged as a PAUR feeding buzz, but PAUR rarely show feeding buzzes. I revisited this file to check it and it is just a commuting PAUR that is perhaps approaching something, but I can't call that a feeding buzz. I need to change this to a commuting pass. 
+fixthis2 <- subset(manual_output1, IN.FILE == "S4U08483_20200808_002648_000.wav")
+fixthis2$MANUAL.ID  <- gsub(".B", "", fixthis2$MANUAL.ID)
+
+manual_output3x <- manual_output3 %>% filter(IN.FILE != "S4U08483_20200808_002648_000.wav")
+
+manual_output3xx <- full_join(manual_output3x, fixthis2)
+
+# The barbastelle recordings (BABA) were sent to external validators to assess species ID
+# 10 out of 11 were validated, one was found to be a poor recording of either a Myotis species or potential Plecotus auritus and will now be designated as (SR1)
+# file name: MARKER-2020_20200901_230046_000.wav 
+
+fixthis3 <- subset(manual_output3, IN.FILE == "MARKER-2020_20200901_230046_000.wav")
+fixthis3$MANUAL.ID <- gsub("BABA", "SRE", fixthis3$MANUAL.ID)
+fixthis3$m_id <- gsub("BABA", "SRE", fixthis3$m_id)
+fixthis3
+
+# drop the original observation from the dataset and replace it with the fixed observation 
+manual_output3x <- manual_output3 %>% filter(IN.FILE != "MARKER-2020_20200901_230046_000.wav") # dropped one observation 
+manual_output3xx <- full_join(manual_output3x, fixthis3) 
+   
+## Had to make these corrections unfortunately AFTER I had already prepared the whole script, so I am going to reuse the name manual_output3 to keep this simple... 
+manual_output3 <- manual_output3xx
+
+
+## More cleaning 
+
+# change __ to :
+manual_output3$m_id <- as.factor(manual_output3$MANUAL.ID) 
+summary(manual_output3$m_id)
+manual_output3$m_id1<- gsub("__", ":", manual_output3$m_id )
+# the guild preface is redundant and can be removed. 
+manual_output3$m_id2 <- gsub("LRE_","", manual_output3$m_id1)
+manual_output3$m_id3 <- gsub("MRE_","", manual_output3$m_id2)
+manual_output3$m_id4 <- gsub("SRE_","", manual_output3$m_id3)
+# weird typo
+manual_output3$m_id5 <- gsub("EMU","VEMU", manual_output3$m_id4) # this will create some more weird typos
+manual_output3$m_id6 <- gsub("VVEMU","VEMU", manual_output3$m_id5)
+# make one all encompassing NoID column 
+manual_output3$m_id7 <- gsub("UNK_BABA_EPNI","NoID", manual_output3$m_id6) 
+manual_output3$m_id8 <- gsub("UNK","NoID", manual_output3$m_id7) 
+manual_output3$m_id9 <- gsub("_UNK","NoID", manual_output3$m_id8)
+
+# some more typos
+manual_output3$m_id10 <- gsub("LRE1","LR1", manual_output3$m_id9)
+# simplify the social call tags
+manual_output3$m_id11 <- gsub(".A/D",".S", manual_output3$m_id10)
+manual_output3$m_id12 <- gsub(".S/D",".S", manual_output3$m_id11)
+manual_output3$m_id13 <- gsub(".S/A",".S", manual_output3$m_id12)
+
+# Anything tagged as PIPI or potentially PI will become MR1
+# MR2 also becomes MR1 (unknown Pipistrelle calls)
+manual_output3$m_id14 <- gsub("PIPI","MR1", manual_output3$m_id13)
+manual_output3$m_id15 <- gsub("MR2","MR1", manual_output3$m_id14)
+manual_output3$m_id16 <- gsub("MRE1","MR1", manual_output3$m_id15)
+manual_output3$m_id17 <- gsub("MRE2","MR1", manual_output3$m_id16)
+# lets check and see what this looks like now... 
+manual_output3$m_id17 <- as.factor(manual_output3$m_id17)
+summary(manual_output3$m_id17)
+levels((manual_output3$m_id17))
+
+# just a few more weird things to fix... 
+manual_output3$m_id18 <- gsub("_NoID.S","NoID.S", manual_output3$m_id17)
+manual_output3$m_id18 <- as.factor(manual_output3$m_id18)
+summary(manual_output3$m_id18)
+levels((manual_output3$m_id18)) # much better
+
+### Now parse by multiple bats in a single passes 
+mcols <- c("manual_pass1", "manual_pass2")
+
+# Trim down to just essential columns
+manual_output4 <- manual_output3 %>% 
+  select(INDIR, OUTDIR, IN.FILE, DURATION, 
+         DATE, TIME, HOUR, 
+         DATE.12, TIME.12, HOUR.12, 
+         AUTO.ID., PULSES, MATCH.RATIO, 
+         MANUAL.ID, m_id18) #1927 obs of 15 vars
+
+summary(manual_output4)
+
+#write.csv(manual_output4, file.path(output_today, "Marker_manualIDscleanred_preparsed.csv")) 
+
+manual_output5 <- manual_output4 %>% 
+  tidyr::separate( col = m_id18,
+                   sep = ":", 
+                   into = mcols)
+
+# create a subset of the dataset with just manual_pass2, 
+# remove the NAs
+# add back these observations as new passes
+
+bat2 <- manual_output5 %>% select(INDIR, OUTDIR, IN.FILE, DURATION, 
+         DATE, TIME, HOUR, 
+         DATE.12, TIME.12, HOUR.12, 
+         AUTO.ID., PULSES, MATCH.RATIO, 
+         MANUAL.ID, manual_pass2) %>% 
+  mutate(manual_pass2 = factor(manual_pass2)) %>% 
+  rename(manual_pass_clean1 = manual_pass2) # need to have all the same column names to merge
+summary(bat2) # 19111 NAs in manual_pass2
+
+bat2.0 <- drop_na(bat2) # 186 obs 
+#19297 - 186 = 19111 # good! 
+
+```
+
+## Parsing passes for multiple bats in one pass and creating the behavior column from manual.id codes
+```{r}
+
+#### Parsing multiple bats from passes ####
+
+# make a dataset with just manual pass1 
+bat1 <- manual_output5 %>% select(INDIR, OUTDIR, IN.FILE, DURATION, 
+         DATE, TIME, HOUR, 
+         DATE.12, TIME.12, HOUR.12, 
+         AUTO.ID., PULSES, MATCH.RATIO, 
+         MANUAL.ID, manual_pass1) %>% 
+  mutate(manual_pass1 = factor(manual_pass1)) %>% 
+  rename(manual_pass_clean1 = manual_pass1) # need to have all the same column names to merge
+
+manual_output6 <-full_join(bat1, bat2.0) #19483 obs 
+#19297 + 186 = 19483 # good! 
+
+summary(manual_output6)
+
+
+#### Parse out behavior ####
+
+# make behavior column, remove behavior tags from manuals ids 
+manual_output7 <- manual_output6 %>%
+  mutate(manual_pass_clean1 = as.character(manual_pass_clean1)) %>% 
+  mutate(behavior = case_when(
+    str_detect(manual_pass_clean1, ".B") ~ "Feeding",
+    str_detect(manual_pass_clean1, ".S") ~ "Social",
+    str_detect(manual_pass_clean1,".B.S") ~ "Feeding",
+    str_detect(manual_pass_clean1, ".S.B") ~ "Feeding",
+    TRUE ~ "Commuting"
+  )) 
+
+# manual_output7$manual_pass_clean1 <- as.factor(manual_output7$manual_pass_clean1)
+# summary(manual_output7$manual_pass_clean1)
+# All of the BABA passes were defined as Feeding when this happened - all of these passes were just commuting so I need to fix that. 
+
+manual_output8 <-manual_output7 %>% 
+  mutate(behavior = case_when(
+  MANUAL.ID == "SRE_BABA" ~ "Commuting", 
+  TRUE ~ as.character(behavior))) 
+
+## 
+manual_output8$behavior <- as.factor(manual_output8$behavior) 
+   summary(manual_output8$behavior)
+  # Commuting   Feeding    Social 
+  #  14887      4046       550 
+   
+   
+  
+# remove all the behavior tags in the manual_pass_clean1 column so it is only manual ids
+manual_output8$manual_pass_clean2 <- gsub(".B", "",manual_output8$manual_pass_clean1)
+manual_output8$manual_pass_clean3 <- gsub(".S", "",manual_output8$manual_pass_clean2)
+
+manual_output8$manual_pass_clean3 <- as.factor(manual_output8$manual_pass_clean3)
+summary(manual_output8$manual_pass_clean3)
+#   BA  EPNI EPNI.   LR1   LR2   LRE   MR1  NYNO  NoID Noise  PAUR  PINA  PIPY   SRE  SRE.  VEMU VEMU. 
+#   10 14014     1   131   221     1    22   182   484    45   553     9    64  3577     1   167     1 
+
+# Okay SO still some typos in here but nothing catastrophic!
+manual_output8$manual_pass_clean4 <- gsub("BA", "BABA", manual_output8$manual_pass_clean3)
+manual_output8$manual_pass_clean5 <- gsub("EPNI.", "EPNI", manual_output8$manual_pass_clean4)
+manual_output8$manual_pass_clean6 <- gsub("LRE", "LR1", manual_output8$manual_pass_clean5)
+manual_output8$manual_pass_clean7 <- gsub("SRE.", "SRE", manual_output8$manual_pass_clean6)
+manual_output8$manual_pass_clean8 <- gsub("SRE", "SR1", manual_output8$manual_pass_clean7) 
+manual_output8$manual_pass_clean9 <- gsub("VEMU.", "VEMU", manual_output8$manual_pass_clean8)
+
+manual_output8$manual_pass_clean9 <- as.factor(manual_output8$manual_pass_clean9)
+summary(manual_output8$manual_pass_clean9) # WOOOOHOOOOO
+ # BABA  EPNI   LR1   LR2   MR1  NYNO  NoID Noise  PAUR  PINA  PIPY   SR1  VEMU 
+ #   11 14015   132   221    22   182   484    45   553     9    64  3578   168
+
+manual_output8$behavior <- as.factor(manual_output8$behavior)
+summary(manual_output8$behavior)
+# Commuting   Feeding    Social 
+#     14887     4046       550 
+
+
+manual_output9 <- manual_output8 %>% select(INDIR, OUTDIR, IN.FILE, DURATION, 
+         DATE, TIME, HOUR, 
+         DATE.12, TIME.12, HOUR.12, 
+         AUTO.ID., PULSES, MATCH.RATIO, 
+         MANUAL.ID, manual_pass_clean9, behavior) %>% 
+         rename(manual.id = manual_pass_clean9) 
+
+# Export before removing noise 
+#write.csv(manual_output9, "MarkerManualIDs_cleaned_withNoise.csv")
+
+
+#### Drop Noise files  ####
+
+manual_output10 <- manual_output9 %>% filter(manual.id != "Noise") #19438 passes
+#19483-19438 = 45 # good! 
+
+
+#### Make guild column  ####
+
+ # BABA  EPNI   LR1   LR2   MR1  NYNO  NoID PAUR  PINA  PIPY   SR1  VEMU 
+manual_output11 <- manual_output10 %>% mutate(
+  guild = case_when(
+    manual.id %in% c("BABA", "SR1", "PAUR") ~ "SRE", 
+    manual.id %in% c("MR1", "PINA", "PIPY") ~ "MRE", 
+    manual.id %in% c("EPNI", "LR1", "LR2", "VEMU", "NYNO") ~ "LRE",
+    manual.id == "NoID" ~ "NoID"
+    
+  )
+) %>% mutate(guild = as.factor(guild))
+ 
+summary(manual_output11$guild)
+#   LRE   MRE  NoID   SRE 
+# 14718    95   484  4141 
+
+
+#### Make the Site / Habitat / Locality / Facility columns ####
+
+#summary(compare)
+head(manual_output11)
+
+manual_output12 <- manual_output11 %>%
+  mutate(Site = case_when(
+    str_detect(OUTDIR, "MetA") ~ "Met45",
+    str_detect(OUTDIR, "MetB") ~ "Met95",
+    str_detect(OUTDIR, "C02") ~ "N02",
+    str_detect(OUTDIR, "P02") ~ "P02",
+    str_detect(OUTDIR, "C04") ~ "N04",
+    str_detect(OUTDIR, "P04") ~ "P04",
+    str_detect(OUTDIR, "C08") ~ "N08",
+    str_detect(OUTDIR, "P08") ~ "P08",
+    str_detect(OUTDIR, "C09") ~ "N09",
+    str_detect(OUTDIR, "P09") ~ "P09",
+    str_detect(OUTDIR, "C10") ~ "N10",
+    str_detect(OUTDIR, "P10") ~ "P10",
+    str_detect(OUTDIR, "C11") ~ "N11",
+    str_detect(OUTDIR, "P11") ~ "P11",
+    str_detect(OUTDIR, "C14") ~ "N14",
+    str_detect(OUTDIR, "P14") ~ "P14",
+  )) %>% mutate(Site = as.factor(Site)) 
+
+summary(manual_output12$Site)
+# Met45 Met95   N02   N04   N08   N09   N10   N11   N14   P02   P04   P08   P09   P10   P11   P14 
+#   197    35   790   600   598  4287  1819   368   728   836   783   441  3686   976  1835  1459 
+
+manual_output13 <- manual_output12 %>% mutate(Habitat = 
+                   case_when(
+                     str_detect(Site, "Met") ~ "MeteorologicalTower", 
+                     str_detect(Site, "N") ~ "Natural", 
+                     str_detect(Site, "P") ~ "TurbinePad", 
+                   )) %>%  mutate(Habitat = as.factor(Habitat)) 
+
+summary(manual_output13$Habitat)
+# MeteorologicalTower             Natural          TurbinePad 
+#                 232                9190               10016 
+summary(manual_output13$Site)
+manual_output14 <- manual_output13 %>% mutate(Locality = 
+                   case_when(
+                     str_detect(Site, "Met") ~ "MeteorologicalTower", 
+                     str_detect(Site, "2") ~ "Turbine2", 
+                     Site %in% c("P04", "N04") ~ "Turbine4", 
+                     str_detect(Site, "8") ~ "Turbine8", 
+                     str_detect(Site, "9") ~ "Turbine9", 
+                     str_detect(Site, "10") ~ "Turbine10", 
+                     str_detect(Site, "11") ~ "Turbine11", 
+                     Site %in% c("P14", "N14") ~ "Turbine14",
+                   ))
+
+manual_output14 <- manual_output14 %>%  mutate(Locality = as.factor(Locality)) 
+summary(manual_output14$Locality)
+# MeteorologicalTower           Turbine10           Turbine11           Turbine14            Turbine2 
+#                 232                2795                2203                2187                1626 
+#            Turbine4            Turbine8            Turbine9 
+#                1383                1039                7973 
+
+manual_output15 <- manual_output14 %>% mutate(Facility = 
+                   case_when(
+                     str_detect(Site, "Met") ~ "South", 
+                     str_detect(Site, "2") ~ "North", 
+                     str_detect(Site, "4") ~ "North", 
+                     str_detect(Site, "8") ~ "North", 
+                     str_detect(Site, "9") ~ "South", 
+                     str_detect(Site, "10") ~ "South", 
+                     str_detect(Site, "11") ~ "South", 
+                     str_detect(Site, "14") ~ "South", 
+                   )) %>%  mutate(Facility = as.factor(Facility)) 
+summary(manual_output15$Facility)
+# North South 
+# 6235 13203 
+
+test <- manual_output15 %>% 
+  group_by(guild, behavior) %>% 
+  dplyr::summarise(n = n())
+sum(test$n)
+
+kable(test) %>% kable_minimal()
+
+summary(manual_output15)
+getwd()
+
+```
+
+
+## Exploratory plots to check that the data looks alright 
+```{r}
+
+names(manual_output15)
+#  [1] "INDIR"       "OUTDIR"      "IN.FILE"     "DURATION"    "DATE"        "TIME"        "HOUR"        "DATE.12"     "TIME.12"     "HOUR.12"    
+# [11] "AUTO.ID."    "PULSES"      "MATCH.RATIO" "MANUAL.ID"   "manual.id"   "behavior"    "guild"       "Site"        "Habitat"     "Locality"   
+# [21] "Facility"  
+
+# are all the guilds represented at each site throughout the season? 
+ggplot(manual_output15) + geom_point(aes(x=DATE, y = guild, color = guild)) + facet_wrap(~Site) # yes
+# are all the guilds represented at each site throughout the night? 
+ggplot(manual_output15) + geom_point(aes(x=HOUR.12, y = guild, color = guild)) + facet_wrap(~Site) # yes 
+
+ggplot(manual_output15) + geom_count(aes(x=DATE, y = guild, color = guild)) + facet_wrap(~Site) # first plot but with geom_count instead of geom_point
+
+
+### Export final output 
+
+#write.csv(manual_output15, file.path(output_today,"MarkerManual_cleaned_manualid_guild_sitenames.csv"))
+getwd()
+```
+
+

@@ -1,0 +1,82 @@
+
+---
+title: "Site map - Marker windpark"
+output: html_document
+---
+# Marker 2020 spatial data 
+
+#Work environment 
+```{r}
+
+library(tidyverse)
+library(dplyr)
+library(raster)
+library(rgdal)
+library(rgeos)
+library(mapview)
+library(sf)
+library(sp)
+library(maps)
+library(leaflet)
+library(randomcoloR)
+library(wesanderson)
+library(leaflegend)
+library(osmdata)
+library(MetBrewer)
+library(colorBlindness)
+library(colorblindcheck)
+library(ggmap)
+library(maptools)
+
+# Turbine locations
+tpt<- st_read("C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Input/SiteMap/Turbine_points.KML")
+
+plot(tpt[1])
+
+tpt$Name = as.factor(tpt$Name)
+
+tpt1 <- tpt %>% mutate(Monitoring = case_when(
+   Name %in% c("T-02", "T-04", "T-09", "T-10",  "T-14") ~ "AcousticsOnly",
+   Name %in% c("T-01", "T-03", "T-05", "T-06", "T-07", "T-12", "T-13", "T-15") ~ "Not Monitored", 
+   Name %in% c("T-08", "T-11") ~ "AcousticsAndCT") )
+
+tpt1$Monitoring = as.factor(tpt1$Monitoring)
+
+str(tpt1)
+## Acoustic detector locations - all sf data frames 
+primary <-  st_read("C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Input/SiteMap/Primary Sites.KML")
+primary
+plot(primary[1])
+
+control <- st_read("C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Input/SiteMap/Control Sites.KML")
+control
+plot(control[1]) 
+
+met<- st_read("C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Input/SiteMap/Meteorological_Tower.KML")
+met
+plot(met[1])
+
+
+```
+
+
+# Figure 1 - Site Map 
+```{r}
+
+displayAllColors(safeColors, color="white")
+
+plot1 <- tpt1 %>% leaflet() %>% 
+   addTiles()  %>% setView(lng= 11.731975,lat = 59.49963904, zoom = 11.5) %>%
+   addCircleMarkers(radius = 7, color = "gray",
+                       fillOpacity = 1,  stroke = TRUE) %>% 
+  addMiniMap(
+    position = "bottomright", zoomLevelOffset = -7, width = 300, height = 300, 
+    collapsedWidth = 19, collapsedHeight = 19) %>% 
+  addScaleBar(position = "bottomright")
+plot1$x$options = append(plot1$x$options, list("zoomControl" = FALSE,  "scaleBar"=TRUE))
+plot1 
+
+# Manually adjusted the view in the viewer pane, added graphics in an external program 
+
+```
+
