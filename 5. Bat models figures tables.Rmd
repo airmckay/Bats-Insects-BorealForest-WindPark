@@ -313,11 +313,6 @@ summary(SREc) # 811 obs of 22 vars
 #[1] 3703
  sum(LREc$Batpass_sum)
 #[1] 10584
-
- 
- bats1_ground <- bats1 %>% filter(Locality != "MeteorologicalTower") %>% droplevels() 
- # ground level detectors only 
- #19206 bat passes 
  
 # ------------------------------------------------------------------------------
 
@@ -325,21 +320,20 @@ summary(SREc) # 811 obs of 22 vars
 
 ground <- bats_tot %>% filter(Habitat != "MeteorologicalTower") %>% droplevels()
 dim(ground)
-# 811  23
+# 811  18
 
 met <- bats_tot %>% filter(Habitat == "MeteorologicalTower") %>% droplevels()
 dim(met)
-# 140  23
+# 140  18
 
 ### ground and met data - raw ###
-
 ground1 <- bats1 %>% filter(Habitat != "MeteorologicalTower") %>% droplevels()
-dim(ground)
-# 811  23
+dim(ground1)
+# 19206    25
 
 met1 <- bats1 %>% filter(Habitat == "MeteorologicalTower") %>% droplevels()
-dim(met)
-# 140  23
+dim(met1)
+# 232  25
  
 ```
 
@@ -475,7 +469,7 @@ groundplot<-
                            labeller = labeller(Habitat = c(
                              "Natural" = "Natural", 
                              "TurbinePad" = "Turbine Pad")))+ 
-  xlab("") +   
+  xlab("") + 
   scale_x_date(limits = c(min = as.Date("2020-07-01"), 
                           max = as.Date("2020-10-01"), limits = c(0,0))) + 
   ylab("") + 
@@ -494,13 +488,12 @@ groundplot<-
 groundplot
 
 # met tower - seasonal
-met_tot <- bats_tot %>% filter(Locality == "MeteorologicalTower") %>% droplevels() 
-# Need to make an active night column for the met tower 
-met_tot$activenight <- "Active"
+met$activenight <- "Active"
+met$night <- as.Date(met$night)
 
 metplot<-
   ggplot() + geom_count(data = met1, aes(x=night, y=guild, color = guild)) + 
-  geom_point(data = met_tot, aes(x = night, y = activenight), color = "black", shape = 17, alpha = 0.75, size = 3) + 
+  geom_point(data = met, aes(x = night, y = activenight), color = "black", shape = 17, alpha = 0.75, size = 3) + 
   guild_color + facet_wrap(~Site, nrow = 2)+ 
   xlab("") + 
   scale_x_date(limits = c(min = as.Date("2020-07-01"), 
@@ -520,7 +513,7 @@ metplot<-
 
 metplot
 
-plot_grid(groundplot_trees, metplot_trees, nrow = 2)
+plot_grid(groundplot, metplot, nrow = 2)
 
 ```
 
@@ -1662,6 +1655,41 @@ fig5 <-  plot_grid(SREf_hplot, SREc_hplot, LREf_hplot, LREc_hplot, labels = c(
   "c.", 
   "d."),label_size = 20, nrow = 4)
 fig5
+
+```
+
+# Figure S4
+```{r}
+
+bats_tot$night <- as.Date(bats_tot$night)
+maxbats <- bats_tot %>% filter(Batpass_sum > 100) %>% droplevels
+summary(maxbats)
+
+maxbats_plot <-
+  ggplot(maxbats) + 
+  geom_point(aes(x = night, y = Batpass_sum), color = "black", alpha = 0.8, size = 3) +
+  geom_smooth(aes(x = night, y = Batpass_sum), color = "grey") +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 13),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none") +
+  xlab("") + ylab("Bat passes per night")
+
+wind_plot <- ggplot(maxbats) + geom_smooth(aes (x = night, y = wind_mean), color = "blue", alpha = 0.3) +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 13),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none") +
+  xlab("") + ylab("Mean wind speed (m/s)")
+  
+temp_plot <- ggplot(maxbats) + geom_smooth(aes ( x = night, y = temp_mean), color = "red", alpha = 0.3)+
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 13),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none") +
+  xlab("") + ylab("Mean nightly temperature (\u00B0C)")
+
+plot_grid(maxbats_plot, temp_plot, wind_plot, nrow = 3, labels = c("a.", "b.", "c.")) 
 
 ```
 
