@@ -315,8 +315,10 @@ summary(SREc) # 811 obs of 22 vars
 #[1] 10584
 
  
- sum(df$Batpass_sum) # ground level detectors only 
- #19206
+ bats1_ground <- bats1 %>% filter(Locality != "MeteorologicalTower") %>% droplevels() 
+ # ground level detectors only 
+ #19206 bat passes 
+ 
 # ------------------------------------------------------------------------------
 
 ### ground and met data - night aggregated bats total ###
