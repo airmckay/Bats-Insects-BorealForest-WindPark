@@ -1665,6 +1665,14 @@ bats_tot$night <- as.Date(bats_tot$night)
 maxbats <- bats_tot %>% filter(Batpass_sum > 100) %>% droplevels
 summary(maxbats)
 
+summary(maxbats$wind_mean)
+  #  Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  # 2.571   3.866   4.795   5.222   6.046   8.890 
+
+summary(maxbats$temp_mean)
+  #  Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  # 13.47   15.09   16.01   17.63   20.85   24.58 
+
 maxbats_plot <-
   ggplot(maxbats) + 
   geom_point(aes(x = night, y = Batpass_sum), color = "black", alpha = 0.8, size = 3) +
@@ -1691,5 +1699,33 @@ panel.background = element_blank(), axis.line = element_line(colour = "black"), 
 
 plot_grid(maxbats_plot, temp_plot, wind_plot, nrow = 3, labels = c("a.", "b.", "c.")) 
 
+
+### Same plots but for all met tower data 
+
+maxbats_plot <-
+  ggplot(met) + 
+  geom_point(aes(x = night, y = Batpass_sum), color = "black", alpha = 0.8, size = 3) +
+  geom_smooth(aes(x = night, y = Batpass_sum), color = "grey") +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 13),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none") +
+  xlab("") + ylab("Bat passes per night")
+
+wind_plot <- ggplot(met) + geom_smooth(aes (x = night, y = wind_mean), color = "blue", alpha = 0.3) +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 13),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none") +
+  xlab("") + ylab("Mean wind speed (m/s)")
+  
+temp_plot <- ggplot(met) + geom_smooth(aes ( x = night, y = temp_mean), color = "red", alpha = 0.3)+
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 13),
+panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position="none") +
+  xlab("") + ylab("Mean nightly temperature (\u00B0C)")
+
+plot_grid(maxbats_plot, temp_plot, wind_plot, nrow = 3, labels = c("a.", "b.", "c.")) 
 ```
 
