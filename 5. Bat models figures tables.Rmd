@@ -56,7 +56,7 @@ library(ggstatsplot)
 library(gginnards)
 library(unikn)
 library(ggpmisc)
-
+library(Rmisc)
 
 input <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Input/forModels"
 
@@ -267,6 +267,18 @@ bats_tot$no_batpass <- bats_tot$batpass01_length - bats_tot$batpass01_sum
 
 summary(bats_tot)
 
+
+# Overview of survey effort across facilities - no met tower 
+active.night = 'TRUE'
+bats_allnight <- bats_gb_simple %>% 
+  mutate( night = as.Date(night))
+
+bats_allnight$active.night <- active.night
+bats_allnight  <- bats_allnight %>% mutate(bats.active = 
+              case_when(Batpass < 1 ~ "No", Batpass >= 1 ~ "Yes")) 
+bats_allnight$bats.active <- as.factor(bats_allnight$bats.active)
+
+
 # ------------------------------------------------------------------------------
 
 ### nightly aggregated with guilds, MRE + social + met tower passes removed ###
@@ -334,6 +346,7 @@ dim(ground1)
 met1 <- bats1 %>% filter(Habitat == "MeteorologicalTower") %>% droplevels()
 dim(met1)
 # 232  25
+summary(met1)
  
 ```
 
@@ -668,8 +681,29 @@ groundplot1
 
 
 ## Figure b 
+summary(met)
+
 met1 <- met %>% filter(batpass01_sum == 1) %>% droplevels() # bats active
-met0 <- met %>% filter(batpass01_sum == 0) %>% droplevels() # bats inactive 
+met0 <- met %>% filter(batpass01_sum == 0) %>% droplevels() # bats inactive
+
+CI(met1$wind_mean, 0.90)
+#    upper     mean    lower 
+# 6.248783 5.853254 5.457725 
+
+CI(met1$temp_mean, 0.90)
+#    upper     mean    lower 
+# 17.24277 16.62713 16.01149 
+
+met.test <- met1 %>% filter(temp_mean > 13 & wind_mean < 10) 
+# 65/72 = 0.9027778
+
+# When was 90% of bat activity at the met tower? 
+summary(met1)
+test.temp <- met1 %>% filter(temp_mean > 13.3)
+test.wind <- met1 %>% filter(wind_mean < 9)
+
+quantile(met1$temp_mean, probs = 0.9)
+quantile(met1$wind_mean, probs = 0.9)
 
 metplot1 <- ggplot() + 
   geom_count(data = met1, 
