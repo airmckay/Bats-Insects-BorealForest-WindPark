@@ -58,6 +58,8 @@ library(unikn)
 library(ggpmisc)
 library(Rmisc)
 
+# citation("mgcv")
+
 input <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Input/forModels"
 
 input1 <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Input"
@@ -295,9 +297,9 @@ bats_gb_trim$jnight <- yday(bats_gb_trim$night)
 survey.effort <- bats_gb_trim %>% 
   dplyr::select(Site, night) %>% distinct() 
 
-survey.nights <- count(survey.effort, Site)
+survey.nights <- dplyr::count(survey.effort, Site)
 
-bats_gb_trim1 <- left_join(bats_gb_trim, survey.nights) %>% rename(survey.nights = n)
+bats_gb_trim1 <- left_join(bats_gb_trim, survey.nights) %>% dplyr::rename(survey.nights = n)
 summary(bats_gb_trim1) # 4866 obs of 22 vars 
 
 # ------------------------------------------------------------------------------

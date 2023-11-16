@@ -44,11 +44,10 @@ path1 <- str_c(input, "/", dataset1)
 manual_output <- read_csv(path1) #257516 passes with noise
 str(manual_output) #27516 obs of 47 variables - all recordings processed through Kaleidoscope pro combined from all sites, with file directories describing site origins and data collection times.
 
+
 # for Reed
 output <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Reed/Outputs"
 
-# for Katrine 
-#output <- ""
 
 
 ## 
@@ -66,6 +65,10 @@ output_today <- dir.name
 setwd(output_today)
 getwd()
 
+
+metacolumntext <- as.data.frame(names(manual_output)) 
+#write.csv(metacolumntext, "column_names_1_Marker2020_ManualID_withnoise_original.csv")
+# 16.11.2023 
 ```
 
 
