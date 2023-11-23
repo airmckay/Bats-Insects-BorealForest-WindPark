@@ -353,7 +353,7 @@ summary(met1)
 ```
 
 
-## Table 1 results - Summary of bat datasets 
+## Table results - Summary of bat datasets 
 ```{r unaggregated_summaries, echo = FALSE}
 
 # Bats total - sum bat passes per site per night (ground level only) 
