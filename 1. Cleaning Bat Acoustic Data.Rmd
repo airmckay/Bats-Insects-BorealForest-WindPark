@@ -72,9 +72,22 @@ metacolumntext <- as.data.frame(names(manual_output))
 ```
 
 
+```{r}
+mo <- manual_output
+
+mo <- mo %>% select(-1) %>% select(-c(FOLDER, CHANNEL, OFFSET, OUT.FILE.FS, OUT.FILE.ZC, ORGID, USERID, REVIEW.ORGID, REVIEW.USERID, INPATHMD5, OUTPATHMD5FS, OUTPATHMD5ZC)) # Columns full of NAs or not relevant to the workflow 
+
+names.mo <- as.data.frame(names(mo))
+# write.csv(names.mo, file = file.path(output_today, "cleaed_manual.output_names_27.11.2023"))
+# write.csv(mo, file = file.path(output_today, "cleaed_manual.output_27.11.2023"))
+
+```
+
+
+
 # Remove noise, clean typos and simplify syntax
 ```{r}
-
+manual_output <- mo
 #### Remove noise files ####
 
 manual_output$AUTO.ID. <- as.factor(manual_output$AUTO.ID.)
@@ -427,5 +440,9 @@ ggplot(manual_output15) + geom_count(aes(x=DATE, y = guild, color = guild)) + fa
 #write.csv(manual_output15, file.path(output_today,"MarkerManual_cleaned_manualid_guild_sitenames.csv"))
 getwd()
 ```
+
+
+
+
 
 

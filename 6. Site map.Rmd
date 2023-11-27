@@ -77,6 +77,10 @@ plot1$x$options = append(plot1$x$options, list("zoomControl" = FALSE,  "scaleBar
 plot1 
 
 # Manually adjusted the view in the viewer pane, added graphics in an external program 
-
+getwd()
+png(filename="simple_graphic.png", res=300)
+plot1 # Make plot
+dev.off()
+plot1
 ```
 
