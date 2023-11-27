@@ -43,7 +43,7 @@ input <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Mark
 
 dataset1 <- "MarkerManual_cleaned_manualid_guild_sitenames.csv"
 dataset2 <- "Marker_night_inventory_0704.2022_edit.csv"
-dataset3 <- "raw insect data tidied (1).csv"
+dataset3 <- "raw insect data tidied_27112023.csv"
 dataset4 <- "TRUE_hourlyaverageweather_wholepark.csv"
 # 
 path1 <- str_c(input, "/", dataset1)
@@ -59,6 +59,7 @@ weather.hours <- read_csv(path4) # 93 obs of 8 vars
 # 
 # # for Reed
 output <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Reed/Outputs"
+
 
 ## 
  file.name <- "3. Aggregate bat acoustic data to hour with weather and insects"

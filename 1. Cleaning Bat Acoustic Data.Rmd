@@ -33,15 +33,13 @@ library(janitor)
 
 #### Import data  ####
 
-# for Reed 
-input <- "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Input"
-
-dataset1 <- "1_Marker2020_ManualID_withnoise_original.csv"
-
-path1 <- str_c(input, "/", dataset1)
 
 
-manual_output <- read_csv(path1) #257516 passes with noise
+manual_output <- read_csv("C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Reed/Outputs/Step1.cleaning bat acoustic data_2023-11-27/cleaed_manual.output_27.11.2023.csv") 
+#257516 passes with noise, 34 vars 
+
+summary(manual_output)
+
 str(manual_output) #27516 obs of 47 variables - all recordings processed through Kaleidoscope pro combined from all sites, with file directories describing site origins and data collection times.
 
 
@@ -69,21 +67,8 @@ getwd()
 metacolumntext <- as.data.frame(names(manual_output)) 
 #write.csv(metacolumntext, "column_names_1_Marker2020_ManualID_withnoise_original.csv")
 # 16.11.2023 
-```
-
-
-```{r}
-mo <- manual_output
-
-mo <- mo %>% select(-1) %>% select(-c(FOLDER, CHANNEL, OFFSET, OUT.FILE.FS, OUT.FILE.ZC, ORGID, USERID, REVIEW.ORGID, REVIEW.USERID, INPATHMD5, OUTPATHMD5FS, OUTPATHMD5ZC)) # Columns full of NAs or not relevant to the workflow 
-
-names.mo <- as.data.frame(names(mo))
-# write.csv(names.mo, file = file.path(output_today, "cleaed_manual.output_names_27.11.2023"))
-# write.csv(mo, file = file.path(output_today, "cleaed_manual.output_27.11.2023"))
 
 ```
-
-
 
 # Remove noise, clean typos and simplify syntax
 ```{r}
