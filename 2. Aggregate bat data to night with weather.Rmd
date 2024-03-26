@@ -83,7 +83,6 @@ setwd(output_today)
 
 getwd()
 
-
 ```
 
 
@@ -139,12 +138,57 @@ names(bats1)
 
 ```
 
+##
+Create a simple version of this dataset for AFVV
+```{r}
+bats1$AUTO.ID. <- factor(bats1$AUTO.ID.)
+levels(bats1$AUTO.ID.)
+
+# "BARBAR" "EPTNIL" "MYOBRA" "MYODAU" "MYOMYS" "MYONAT" "NYCNOC"
+# "NoID"   "PIPNAT" "PIPPIP" "PIPPYG" "PLEAUR" "VESMUR"
+
+b1 <- bats1 %>% select(IN.FILE, 
+                       date, TIME, HOUR, 
+                       night, TIME.12, HOUR.12,
+                       AUTO.ID.,
+                       manual.id,
+                       taxa,
+                       PULSES, 
+                       MATCH.RATIO, 
+                       guild, 
+                       Site, 
+                       Habitat,
+                       ) %>% 
+  rename(auto.id = AUTO.ID.) %>% 
+  mutate(auto.guild = factor(case_when(
+    auto.id %in% c("EPTNIL", "NYCNOC", "VESMUR") ~ "LRE", 
+    auto.id %in% c("PIPNAT", "PIPPIP", "PIPPYG") ~ "MRE", 
+    auto.id %in% c("BARBAR", "MYOBRA", "MYODAU", 
+                   "MYOMYS", "MYONAT", "PLEAUR") ~ "SRE", 
+    auto.id == "NoID" ~ "NoID"
+    ))) 
+summary(b1)
+levels(b1$manual.id)
+
+output_today
+# "C:/Users/apmc/OneDrive - Norwegian University of Life Sciences/2. Marker 2019-2020/Marker 2022/SecondDraftAnalyses/Reed/Outputs/Step2.Aggregating bat passes to night_2024-03-26"
+
+write.csv(b1, file = file.path(output_today, "Marker_Bats_Manual_Auto_IDS.csv"))
+
+kbl(names(b1)) %>% kable_styling()
+test <- b1 %>% select(IN.FILE) %>% distinct()
+```
+
+bats1 <- bats1 %>% mutate(auto_guild = case_when(
+  auto %in% c("EPNI", "NYNO", "VEMU", "LR1", "LR2") ~ "LRE",
+  auto %in% c("PIPY", "PINA", "MR1") ~ "MRE",
+  auto %in% c("BABA", "SR1", "PAUR") ~ "SRE",
+  auto == "NoID" ~ "NoID"
 
 ## Aggregate bat passes to night per site
 - Insert zeros
 - merge with night aggregated weather data 
 ```{r}
-
 # Format the date columns 
 bats1 <- bats1 %>% mutate(date = as.Date(DATE),
                            night = as.Date(DATE.12))
